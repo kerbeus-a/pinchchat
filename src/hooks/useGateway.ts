@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GatewayClient, type JsonPayload } from '../lib/gateway';
+import { HermesGatewayClient, type JsonPayload } from '../lib/hermesGateway';
 import { genIdempotencyKey } from '../lib/utils';
-import { getStoredCredentials, storeCredentials, clearCredentials, type AuthMode } from '../lib/credentials';
-import { getOrCreateDeviceIdentity } from '../lib/deviceIdentity';
+import { getStoredCredentials, storeCredentials, clearCredentials } from '../lib/hermesCredentials';
 import { getCachedMessages, setCachedMessages, mergeWithCache } from '../lib/messageCache';
 import { extractAgentIdFromKey } from '../lib/sessionName';
 import { extractText, extractThinking, type ChatPayloadMessage } from '../lib/messageExtract';
@@ -10,7 +9,7 @@ import { parseHistoryMessages } from '../lib/historyParser';
 import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity } from '../types';
 
 export function useGateway() {
-  const clientRef = useRef<GatewayClient | null>(null);
+  const clientRef = useRef<HermesGatewayClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -177,22 +176,14 @@ export function useGateway() {
     }
   }, []);
 
-  const setupClient = useCallback(async (wsUrl: string, token: string, authMode: AuthMode = 'token', clientId?: string) => {
+  const setupClient = useCallback(async (bridgeUrl: string, agent: string) => {
     // Tear down existing client
     if (clientRef.current) {
       clientRef.current.disconnect();
     }
 
-    const client = new GatewayClient(wsUrl, token, authMode, clientId);
+    const client = new HermesGatewayClient(bridgeUrl, agent);
     clientRef.current = client;
-
-    // Load device identity for signed connect handshake
-    try {
-      const identity = await getOrCreateDeviceIdentity();
-      client.setDeviceIdentity(identity);
-    } catch (err) {
-      console.warn('[PinchChat] Failed to load device identity, connecting without it:', err);
-    }
 
     client.onStatus((s) => {
       setStatus(s);
@@ -201,19 +192,13 @@ export function useGateway() {
         setConnectError(null);
         setIsConnecting(false);
         isConnectingRef.current = false;
-        storeCredentials(wsUrl, token, authMode, clientId);
+        storeCredentials(bridgeUrl, agent);
         loadSessions();
         loadAgentIdentity();
         loadHistory(activeSessionRef.current);
-      } else if (s === 'pairing') {
-        setAuthenticated(true);
-        setConnectError(null);
-        setIsConnecting(false);
-        isConnectingRef.current = false;
       } else if (s === 'disconnected' && !client.isConnected) {
-        // If we never connected successfully, this is an auth/connection error
         if (isConnectingRef.current) {
-          setConnectError('Connection failed — check URL and token');
+          setConnectError('Connection failed — check bridge URL');
           setIsConnecting(false);
           isConnectingRef.current = false;
           setAuthenticated(false);
@@ -349,8 +334,7 @@ export function useGateway() {
     initRef.current = true;
     const stored = getStoredCredentials();
     if (stored) {
-      // Init on mount — setupClient sets state as part of establishing the connection
-      setupClient(stored.url, stored.token, stored.authMode || 'token', stored.clientId);
+      setupClient(stored.bridgeUrl, stored.agent);
     } else {
       setAuthenticated(false);
     }
@@ -453,8 +437,8 @@ export function useGateway() {
     }
   }, [switchSession, loadSessions]);
 
-  const login = useCallback((url: string, token: string, authMode: AuthMode = 'token', clientId?: string) => {
-    setupClient(url, token, authMode, clientId);
+  const login = useCallback((bridgeUrl: string, agent: string) => {
+    setupClient(bridgeUrl, agent);
   }, [setupClient]);
 
   const deleteSession = useCallback(async (key: string) => {
