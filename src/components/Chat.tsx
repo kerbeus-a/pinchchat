@@ -1,15 +1,14 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { ChatMessageComponent } from './ChatMessage';
-import { ChatInput } from './ChatInput';
+import { ChatInput, type ComposerInsertRequest } from './ChatInput';
 import { TypingIndicator } from './TypingIndicator';
 import type { ChatMessage, ConnectionStatus } from '../types';
-import { Bot, ArrowDown, Loader2, ChevronsDownUp, ChevronsUpDown, Sparkles, Bookmark, Download } from 'lucide-react';
+import { Bot, ArrowDown, Loader2, ChevronsDownUp, ChevronsUpDown, Sparkles, Bookmark } from 'lucide-react';
 import { MessageSearch } from './MessageSearch';
 import { useT } from '../hooks/useLocale';
 import { getLocale, type TranslationKey } from '../lib/i18n';
 import { useToolCollapse } from '../hooks/useToolCollapse';
 import { useBookmarks } from '../hooks/useBookmarks';
-import { messagesToMarkdown, downloadFile } from '../lib/exportChat';
 
 interface Props {
   messages: ChatMessage[];
@@ -81,9 +80,14 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [replyTo, setReplyTo] = useState<{ preview: string } | null>(null);
+  const [insertRequest, setInsertRequest] = useState<ComposerInsertRequest | null>(null);
 
   // Clear reply context on session switch
-  useEffect(() => { setReplyTo(null); }, [sessionKey]); // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset transient composer UI when session changes
+    setReplyTo(null);
+    setInsertRequest(null);
+  }, [sessionKey]);
   const prevMessageCountRef = useRef(messages.length);
 
   const checkIfNearBottom = useCallback(() => {
@@ -217,13 +221,6 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
   const [showBookmarks, setShowBookmarks] = useState(false);
   const hasToolCalls = useMemo(() => messages.some(m => m.blocks.some(b => b.type === 'tool_use' || b.type === 'tool_result')), [messages]);
 
-  const handleExport = useCallback(() => {
-    const label = sessionKey?.replace(/^agent:[^:]+:/, '') || 'conversation';
-    const md = messagesToMarkdown(messages, label);
-    const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-    downloadFile(md, `${safeLabel}-${new Date().toISOString().slice(0, 10)}.md`);
-  }, [messages, sessionKey]);
-
   // Message search
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -308,6 +305,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
                       key={key}
                       onClick={() => onSend(t(key))}
                       className="text-left text-sm px-4 py-3 rounded-2xl border border-pc-border bg-pc-elevated/30 text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text hover:border-[var(--pc-accent-dim)] transition-all duration-200 leading-snug"
+                      aria-label={t(key)}
                     >
                       {t(key)}
                     </button>
@@ -343,7 +341,19 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
                     </div>
                   )}
                   <div className={`${isActiveMatch ? 'ring-1 ring-pc-accent-light/40 rounded-lg' : ''} ${msg.isArchived ? 'opacity-60' : ''}`}>
-                    <ChatMessageComponent message={msg} onRetry={!isGenerating ? handleSend : undefined} onReply={(preview) => { setReplyTo({ preview }); document.getElementById('chat-input')?.focus(); }} agentAvatarUrl={agentAvatarUrl} isFirstInGroup={isFirstInGroup} isBookmarked={isBookmarked(msg.id)} onToggleBookmark={sessionKey ? () => toggleBookmark(msg.id, sessionKey, (msg.content || '').slice(0, 120), msg.timestamp) : undefined} />
+                    <ChatMessageComponent
+                      message={msg}
+                      onRetry={!isGenerating ? handleSend : undefined}
+                      onReply={(preview) => { setReplyTo({ preview }); document.getElementById('chat-input')?.focus(); }}
+                      onUseSelection={(text) => {
+                        setInsertRequest({ id: `${msg.id}:${Date.now()}`, text });
+                        document.getElementById('chat-input')?.focus();
+                      }}
+                      agentAvatarUrl={agentAvatarUrl}
+                      isFirstInGroup={isFirstInGroup}
+                      isBookmarked={isBookmarked(msg.id)}
+                      onToggleBookmark={sessionKey ? () => toggleBookmark(msg.id, sessionKey, (msg.content || '').slice(0, 120), msg.timestamp) : undefined}
+                    />
                   </div>
                 </div>
             );
@@ -365,6 +375,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
                     setShowBookmarks(false);
                   }}
                   className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-[var(--pc-hover)] text-xs text-pc-text-secondary truncate transition-colors"
+                  aria-label={`${t('chat.bookmarks')}: ${b.preview || '(empty)'}`}
                 >
                   <span className="text-amber-400 mr-1">★</span>
                   {b.preview || '(empty)'}
@@ -398,16 +409,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
                   <span className="text-[10px] tabular-nums text-pc-text-muted">{sessionBookmarks.length}</span>
                 </button>
               )}
-              {messages.length > 0 && (
-                <button
-                  onClick={handleExport}
-                  aria-label={t('chat.export')}
-                  title={t('chat.export')}
-                  className="flex items-center gap-1.5 rounded-full border border-pc-border-strong bg-pc-elevated/90 backdrop-blur-lg px-3 py-2 text-xs text-pc-text shadow-lg hover:bg-pc-elevated/90 transition-all hover:shadow-cyan-500/10"
-                >
-                  <Download size={14} className="text-pc-accent-light" />
-                </button>
-              )}
+
               {(showScrollBtn || newMessageCount > 0) && (
                 <button
                   onClick={() => { scrollToBottom('smooth'); setNewMessageCount(0); }}
@@ -426,7 +428,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
           </div>
         )}
       </div>
-      <ChatInput onSend={handleSend} onNewSession={onNewSession} onAbort={onAbort} isGenerating={isGenerating} disabled={status !== 'connected'} sessionKey={sessionKey} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
+      <ChatInput onSend={handleSend} onNewSession={onNewSession} onAbort={onAbort} isGenerating={isGenerating} disabled={status !== 'connected'} sessionKey={sessionKey} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} insertRequest={insertRequest} />
     </div>
   );
 }

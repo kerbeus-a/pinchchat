@@ -1,12 +1,21 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, ArrowUpCircle, Download, Pencil } from 'lucide-react';
+import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown } from 'lucide-react';
 import type { Session } from '../types';
 import { useT } from '../hooks/useLocale';
 import { SessionIcon } from './SessionIcon';
-import { sessionDisplayName } from '../lib/sessionName';
+import { sessionDisplayName, extractAgentIdFromKey } from '../lib/sessionName';
 import { relativeTime } from '../lib/relativeTime';
 import { useUpdateCheck } from '../hooks/useUpdateCheck';
 import { usePwaInstall } from '../hooks/usePwaInstall';
+import {
+  FILTER_KEY, AGENT_FILTER_KEY,
+  MIN_WIDTH, MAX_WIDTH, WIDTH_KEY,
+  getCustomNames, saveCustomNames,
+  sessionCategory, getAvailableCategories, categoryLabel,
+  getSavedWidth, getPinnedSessions, savePinnedSessions,
+  getSavedOrder, saveOrder,
+} from '../lib/sidebarStorage';
+import { copyToClipboard } from '../lib/clipboard';
 
 function VersionBadge() {
   const update = useUpdateCheck(__APP_VERSION__);
@@ -62,42 +71,6 @@ function SidebarFooter() {
   );
 }
 
-const PINNED_KEY = 'pinchchat-pinned-sessions';
-const WIDTH_KEY = 'pinchchat-sidebar-width';
-const ORDER_KEY = 'pinchchat-session-order';
-const FILTER_KEY = 'pinchchat-session-filter';
-const NAMES_KEY = 'pinchchat-session-names';
-
-function getCustomNames(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NAMES_KEY);
-    if (raw) return JSON.parse(raw) as Record<string, string>;
-  } catch { /* noop */ }
-  return {};
-}
-
-function saveCustomNames(names: Record<string, string>) {
-  try {
-    localStorage.setItem(NAMES_KEY, JSON.stringify(names));
-  } catch { /* noop */ }
-}
-
-/** Detect the category of a session for filtering */
-function sessionCategory(s: Session): string {
-  if (s.key.includes(':cron:')) return 'cron';
-  if (s.key.includes(':spawn:') || s.key.includes(':sub:')) return 'agent';
-  const ch = s.channel?.toLowerCase();
-  if (ch && ch !== 'webchat') return ch;
-  return 'other';
-}
-
-/** Get unique categories present in sessions */
-function getAvailableCategories(sessions: Session[]): string[] {
-  const cats = new Set<string>();
-  for (const s of sessions) cats.add(sessionCategory(s));
-  return Array.from(cats).sort();
-}
-
 /** Icons for filter chips */
 function FilterChipIcon({ cat, size = 12 }: { cat: string; size?: number }) {
   switch (cat) {
@@ -109,58 +82,75 @@ function FilterChipIcon({ cat, size = 12 }: { cat: string; size?: number }) {
   }
 }
 
-/** Pretty label for category */
-function categoryLabel(cat: string): string {
-  if (cat === 'cron') return 'Cron';
-  if (cat === 'agent') return 'Agents';
-  if (cat === 'other') return 'Chat';
-  return cat.charAt(0).toUpperCase() + cat.slice(1);
-}
-const MIN_WIDTH = 220;
-const MAX_WIDTH = 480;
-const DEFAULT_WIDTH = 288; // w-72
+export function NewSessionSplitButton({ onNewSession, onNewSessionForAgent, agents }: {
+  onNewSession: () => Promise<void>;
+  onNewSessionForAgent: (agentId: string) => Promise<void>;
+  agents: string[];
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
-function getSavedWidth(): number {
-  try {
-    const v = localStorage.getItem(WIDTH_KEY);
-    if (v) {
-      const n = Number(v);
-      if (n >= MIN_WIDTH && n <= MAX_WIDTH) return n;
-    }
-  } catch { /* noop */ }
-  return DEFAULT_WIDTH;
-}
+  const showDropdown = agents.length >= 2;
 
-function getPinnedSessions(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PINNED_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* noop */ }
-  return new Set();
-}
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
 
-function savePinnedSessions(pinned: Set<string>) {
-  try {
-    localStorage.setItem(PINNED_KEY, JSON.stringify([...pinned]));
-  } catch { /* noop */ }
-}
-
-function getSavedOrder(): string[] {
-  try {
-    const raw = localStorage.getItem(ORDER_KEY);
-    if (raw) return JSON.parse(raw) as string[];
-  } catch { /* noop */ }
-  return [];
-}
-
-function saveOrder(order: string[]) {
-  try {
-    localStorage.setItem(ORDER_KEY, JSON.stringify(order));
-  } catch { /* noop */ }
+  return (
+    <div className="relative flex items-center" ref={wrapperRef}>
+      <button
+        onClick={() => { void onNewSession(); }}
+        className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-pc-text-secondary hover:text-pc-text hover:bg-[var(--pc-hover)] border border-pc-border bg-pc-elevated/30 transition-colors ${showDropdown ? 'rounded-l-xl border-r-0' : 'rounded-xl'}`}
+        title={t('sidebar.newSession')}
+        aria-label={t('sidebar.newSession')}
+      >
+        <Plus size={13} />
+        <span>New</span>
+      </button>
+      {showDropdown && (
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`flex items-center px-1.5 py-1.5 text-xs text-pc-text-secondary hover:text-pc-text hover:bg-[var(--pc-hover)] border border-pc-border bg-pc-elevated/30 rounded-r-xl transition-colors ${open ? 'bg-[var(--pc-hover)] text-pc-text' : ''}`}
+          title={t('sidebar.selectAgent')}
+          aria-label={t('sidebar.selectAgent')}
+          aria-expanded={open}
+        >
+          <ChevronDown size={12} className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      {open && showDropdown && (
+        <div className="absolute top-full right-0 mt-1.5 min-w-[150px] rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] shadow-xl z-50 backdrop-blur-xl overflow-hidden">
+          <div className="px-3 py-1.5 text-[10px] text-pc-text-muted border-b border-pc-border font-medium uppercase tracking-wider">
+            {t('sidebar.selectAgent')}
+          </div>
+          {agents.map(id => (
+            <button
+              key={id}
+              onClick={() => { void onNewSessionForAgent(id); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text transition-colors"
+              aria-label={`${t('sidebar.newSession')} ${id}`}
+            >
+              <Bot size={12} className="shrink-0 text-pc-accent-light/70" />
+              <span className="font-mono truncate">{id}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface Props {
   sessions: Session[];
+  agents?: string[];
   activeSession: string;
   onSwitch: (key: string) => void;
   onDelete: (key: string) => void;
@@ -169,9 +159,12 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onRename?: (key: string, label: string) => Promise<boolean>;
+  onNewSession?: () => Promise<void>;
+  onNewSessionForAgent?: (agentId: string) => Promise<void>;
+  onToast?: (opts: { message: string; type: 'success' | 'warning' }) => void;
 }
 
-export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename }: Props) {
+export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename, onNewSession, onNewSessionForAgent, onToast }: Props) {
   const t = useT();
   const [filter, setFilter] = useState('');
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -182,6 +175,9 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
   const [customOrder, setCustomOrder] = useState<string[]>(getSavedOrder);
   const [channelFilter, setChannelFilter] = useState<string | null>(() => {
     try { return localStorage.getItem(FILTER_KEY); } catch { return null; }
+  });
+  const [agentFilter, setAgentFilter] = useState<string | null>(() => {
+    try { return localStorage.getItem(AGENT_FILTER_KEY); } catch { return null; }
   });
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -302,6 +298,26 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
 
   const availableCategories = useMemo(() => getAvailableCategories(sessions), [sessions]);
 
+  const availableAgentIds = useMemo(() => {
+    const ids = new Set<string>();
+    sessions.forEach(s => {
+      const id = s.agentId || extractAgentIdFromKey(s.key);
+      if (id) ids.add(id);
+    });
+    return Array.from(ids).sort();
+  }, [sessions]);
+
+  const toggleAgentFilter = useCallback((id: string) => {
+    setAgentFilter(prev => {
+      const next = prev === id ? null : id;
+      try {
+        if (next) localStorage.setItem(AGENT_FILTER_KEY, next);
+        else localStorage.removeItem(AGENT_FILTER_KEY);
+      } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   const toggleChannelFilter = useCallback((cat: string) => {
     setChannelFilter(prev => {
       const next = prev === cat ? null : cat;
@@ -320,6 +336,12 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
       list = list.filter(s => s.isActive);
     } else if (channelFilter) {
       list = list.filter(s => sessionCategory(s) === channelFilter);
+    }
+    if (agentFilter) {
+      list = list.filter(s => {
+        const id = s.agentId || extractAgentIdFromKey(s.key);
+        return id === agentFilter;
+      });
     }
     if (filter.trim()) {
       const q = filter.toLowerCase();
@@ -341,25 +363,34 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
     pinnedList.sort(byCustomThenRecent);
     unpinnedList.sort(byCustomThenRecent);
     return [...pinnedList, ...unpinnedList];
-  }, [sessions, filter, pinned, customOrder, channelFilter, customNames]);
+  }, [sessions, filter, pinned, customOrder, channelFilter, agentFilter, customNames]);
 
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }} role="button" tabIndex={-1} aria-label="Close sidebar" />}
       <aside role="navigation" aria-label="Sessions" className={`fixed lg:relative top-0 left-0 h-full bg-[var(--pc-bg-base)]/95 border-r border-pc-border z-50 transform ${dragging ? '' : 'transition-transform'} lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'} flex flex-col backdrop-blur-xl`} style={{ width: `${width}px` }}>
-        <div className="h-14 flex items-center justify-between px-4 border-b border-pc-border">
-          <div className="flex items-center gap-2">
-            <div className="relative">
+        <div className="h-14 flex items-center justify-between px-4 border-b border-pc-border gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="relative shrink-0">
               <div className="absolute -inset-1.5 rounded-xl bg-gradient-to-r from-cyan-400/15 to-violet-500/15 blur-lg" />
               <div className="relative flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden">
                 <img src="/logo.png" alt="PinchChat" className="h-8 w-8 object-contain" />
               </div>
             </div>
-            <span className="font-semibold text-sm text-pc-text tracking-wide">{t('sidebar.title')}</span>
+            <span className="font-semibold text-sm text-pc-text tracking-wide truncate">{t('sidebar.title')}</span>
           </div>
-          <button onClick={onClose} className="lg:hidden p-1.5 rounded-xl hover:bg-[var(--pc-hover)] text-pc-text-secondary transition-colors" aria-label={t('sidebar.close')}>
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onNewSession && onNewSessionForAgent && (
+              <NewSessionSplitButton
+                onNewSession={onNewSession}
+                onNewSessionForAgent={onNewSessionForAgent}
+                agents={agents}
+              />
+            )}
+            <button onClick={onClose} className="lg:hidden p-1.5 rounded-xl hover:bg-[var(--pc-hover)] text-pc-text-secondary transition-colors" aria-label={t('sidebar.close')}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Session search */}
@@ -389,44 +420,91 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
           </div>
         )}
 
-        {/* Channel filter chips */}
-        {availableCategories.length > 1 && (
-          <div className="px-2 pt-1.5 flex flex-wrap gap-1">
-            <button
-              onClick={() => { setChannelFilter(null); try { localStorage.removeItem(FILTER_KEY); } catch { /* noop */ } }}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
-                !channelFilter
-                  ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
-                  : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
-              }`}
-            >
-              {t('sidebar.filterAll')}
-            </button>
-            <button
-              onClick={() => toggleChannelFilter('active')}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
-                channelFilter === 'active'
-                  ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
-                  : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
-              }`}
-            >
-              <Zap size={10} />
-              {t('sidebar.filterActive')}
-            </button>
-            {availableCategories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => toggleChannelFilter(cat)}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
-                  channelFilter === cat
-                    ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
-                    : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
-                }`}
-              >
-                <FilterChipIcon cat={cat} size={10} />
-                {categoryLabel(cat)}
-              </button>
-            ))}
+        {/* Filter chips */}
+        {(availableCategories.length > 1 || availableAgentIds.length >= 2) && (
+          <div className="px-2 pt-2 pb-1 flex flex-col gap-2">
+            {availableCategories.length > 1 && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => { setChannelFilter(null); try { localStorage.removeItem(FILTER_KEY); } catch { /* noop */ } }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                    !channelFilter
+                      ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
+                      : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                  }`}
+                  aria-label={t('sidebar.filterAll')}
+                  aria-pressed={!channelFilter}
+                >
+                  {t('sidebar.filterAll')}
+                </button>
+                <button
+                  onClick={() => toggleChannelFilter('active')}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                    channelFilter === 'active'
+                      ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
+                      : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                  }`}
+                  aria-label={t('sidebar.filterActive')}
+                  aria-pressed={channelFilter === 'active'}
+                >
+                  <Zap size={10} />
+                  {t('sidebar.filterActive')}
+                </button>
+                {availableCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => toggleChannelFilter(cat)}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                      channelFilter === cat
+                        ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
+                        : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                    }`}
+                    aria-label={categoryLabel(cat)}
+                    aria-pressed={channelFilter === cat}
+                  >
+                    <FilterChipIcon cat={cat} size={10} />
+                    {categoryLabel(cat)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {availableCategories.length > 1 && availableAgentIds.length >= 2 && (
+              <div className="h-px bg-pc-border/50" />
+            )}
+
+            {availableAgentIds.length >= 2 && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => { setAgentFilter(null); try { localStorage.removeItem(AGENT_FILTER_KEY); } catch { /* noop */ } }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                    !agentFilter
+                      ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
+                      : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                  }`}
+                  aria-label={t('sidebar.filterAllAgents')}
+                  aria-pressed={!agentFilter}
+                >
+                  {t('sidebar.filterAllAgents')}
+                </button>
+                {availableAgentIds.map(id => (
+                  <button
+                    key={id}
+                    onClick={() => toggleAgentFilter(id)}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                      agentFilter === id
+                        ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
+                        : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                    }`}
+                    aria-label={`Filter agent: ${id}`}
+                    aria-pressed={agentFilter === id}
+                  >
+                    <Bot size={10} className="shrink-0" />
+                    <span className="font-mono">{id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -460,7 +538,25 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
           }}
         >
           {sessions.length === 0 && (
-            <div className="px-3 py-8 text-center text-pc-text-muted text-sm">{t('sidebar.empty')}</div>
+            <div className="flex flex-col items-center justify-center px-4 py-10 gap-3 text-center">
+              <div className="h-10 w-10 rounded-2xl bg-[var(--pc-hover)] flex items-center justify-center text-pc-text-muted">
+                <MessageSquare size={20} />
+              </div>
+              <div>
+                <p className="text-sm text-pc-text-secondary font-medium">{t('sidebar.emptyTitle')}</p>
+                <p className="text-xs text-pc-text-muted mt-0.5">{t('sidebar.emptySubtitle')}</p>
+              </div>
+              {onNewSession && (
+                <button
+                  onClick={() => { void onNewSession(); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--pc-accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity shadow-[0_4px_12px_rgba(var(--pc-accent-rgb),0.2)]"
+                  aria-label={t('sidebar.newSession')}
+                >
+                  <Plus size={14} />
+                  {t('sidebar.newSession')}
+                </button>
+              )}
+            </div>
           )}
           {sessions.length > 0 && filtered.length === 0 && (
             <div className="px-3 py-6 text-center text-pc-text-muted text-xs">{t('sidebar.noResults')}</div>
@@ -586,6 +682,25 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
                       >
                         <Pin size={12} className={isPinned ? 'fill-current' : ''} />
                       </button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const params = new URLSearchParams(window.location.search);
+                          params.set('session', s.key);
+                          const url = window.location.origin + window.location.pathname + '?' + params.toString();
+                          const ok = await copyToClipboard(url);
+                          if (ok) {
+                            onToast?.({ message: t('session.linkCopied'), type: 'success' });
+                          } else {
+                            onToast?.({ message: t('session.copyLinkFailed'), type: 'warning' });
+                          }
+                        }}
+                        className="shrink-0 p-0.5 rounded-lg transition-all text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary"
+                        title={t('sidebar.copyLink')}
+                        aria-label={t('sidebar.copyLink')}
+                      >
+                        <Link size={12} />
+                      </button>
                       {onSplit && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onSplit(s.key); }}
@@ -666,12 +781,14 @@ export function Sidebar({ sessions, activeSession, onSwitch, onDelete, onSplit, 
               <button
                 onClick={() => setConfirmDelete(null)}
                 className="px-3 py-1.5 text-xs rounded-xl border border-pc-border-strong text-pc-text-secondary hover:bg-[var(--pc-hover)] transition-colors"
+                aria-label={t('sidebar.deleteCancel')}
               >
                 {t('sidebar.deleteCancel')}
               </button>
               <button
                 onClick={() => { onDelete(confirmDelete); setConfirmDelete(null); }}
                 className="px-3 py-1.5 text-xs rounded-xl bg-red-500/20 text-red-300 border border-red-500/20 hover:bg-red-500/30 transition-colors"
+                aria-label={t('sidebar.delete')}
               >
                 {t('sidebar.delete')}
               </button>

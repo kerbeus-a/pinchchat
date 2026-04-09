@@ -1,14 +1,8 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
-import { ThemeContext, type ThemeName, type AccentColor } from './ThemeContextDef';
+import { ThemeContext, type ThemeName, type AccentColor, type UiFont, type MonoFont, uiFontStacks, monoFontStacks } from './ThemeContextDef';
+import { loadStored, STORAGE_KEY } from './themeStorage';
 
 export type { ThemeName, AccentColor } from './ThemeContextDef';
-
-const STORAGE_KEY = 'pinchchat-theme';
-
-interface StoredTheme {
-  theme: ThemeName;
-  accent: AccentColor;
-}
 
 type ConcreteTheme = 'dark' | 'light' | 'oled';
 const themes: Record<ConcreteTheme, Record<string, string>> = {
@@ -134,56 +128,128 @@ function resolveTheme(name: ThemeName): 'dark' | 'light' | 'oled' {
   return name;
 }
 
-function loadStored(): StoredTheme {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if ((parsed.theme in themes || parsed.theme === 'system') && parsed.accent in accents) return parsed;
-    }
-  } catch { /* ignore invalid stored JSON */ }
-  return { theme: 'dark', accent: 'cyan' };
+interface ThemeSettings {
+  theme: ThemeName;
+  accent: AccentColor;
+  uiFont: UiFont;
+  monoFont: MonoFont;
+  uiFontSize: number;
+  monoFontSize: number;
+}
+
+function fontVars(uiFont: UiFont, monoFont: MonoFont, uiFontSize: number, monoFontSize: number) {
+  return {
+    '--pc-font-ui': uiFontStacks[uiFont],
+    '--pc-font-mono': monoFontStacks[monoFont],
+    '--pc-font-size': `${uiFontSize}px`,
+    '--pc-font-size-mono': `${monoFontSize}px`,
+  };
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [stored] = useState(loadStored);
   const [theme, setThemeState] = useState<ThemeName>(stored.theme);
   const [accent, setAccentState] = useState<AccentColor>(stored.accent);
+  const [uiFont, setUiFontState] = useState<UiFont>(stored.uiFont);
+  const [monoFont, setMonoFontState] = useState<MonoFont>(stored.monoFont);
+  const [uiFontSize, setUiFontSizeState] = useState<number>(stored.uiFontSize);
+  const [monoFontSize, setMonoFontSizeState] = useState<number>(stored.monoFontSize);
 
-  const persist = useCallback((t: ThemeName, a: AccentColor) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: t, accent: a }));
+  const persist = useCallback((s: ThemeSettings) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      theme: s.theme,
+      accent: s.accent,
+      uiFont: s.uiFont,
+      monoFont: s.monoFont,
+      uiFontSize: s.uiFontSize,
+      monoFontSize: s.monoFontSize,
+    }));
+  }, []);
+
+  const applyAll = useCallback((s: ThemeSettings) => {
+    applyVars({
+      ...themes[resolveTheme(s.theme)],
+      ...accents[s.accent],
+      ...fontVars(s.uiFont, s.monoFont, s.uiFontSize, s.monoFontSize),
+    });
   }, []);
 
   const setTheme = useCallback((t: ThemeName) => {
     setThemeState(t);
-    applyVars(themes[resolveTheme(t)]);
-    persist(t, accent);
-  }, [accent, persist]);
+    const next: ThemeSettings = { theme: t, accent, uiFont, monoFont, uiFontSize, monoFontSize };
+    applyAll(next);
+    persist(next);
+  }, [accent, applyAll, persist, uiFont, monoFont, uiFontSize, monoFontSize]);
 
   const setAccent = useCallback((a: AccentColor) => {
     setAccentState(a);
-    applyVars(accents[a]);
-    persist(theme, a);
-  }, [theme, persist]);
+    const next: ThemeSettings = { theme, accent: a, uiFont, monoFont, uiFontSize, monoFontSize };
+    applyAll(next);
+    persist(next);
+  }, [theme, applyAll, persist, uiFont, monoFont, uiFontSize, monoFontSize]);
+
+  const setUiFont = useCallback((f: UiFont) => {
+    setUiFontState(f);
+    const next: ThemeSettings = { theme, accent, uiFont: f, monoFont, uiFontSize, monoFontSize };
+    applyAll(next);
+    persist(next);
+  }, [accent, theme, applyAll, persist, monoFont, uiFontSize, monoFontSize]);
+
+  const setMonoFont = useCallback((f: MonoFont) => {
+    setMonoFontState(f);
+    const next: ThemeSettings = { theme, accent, uiFont, monoFont: f, uiFontSize, monoFontSize };
+    applyAll(next);
+    persist(next);
+  }, [accent, theme, applyAll, persist, uiFont, uiFontSize, monoFontSize]);
+
+  const setUiFontSize = useCallback((size: number) => {
+    const clamped = Math.min(20, Math.max(12, size));
+    setUiFontSizeState(clamped);
+    const next: ThemeSettings = { theme, accent, uiFont, monoFont, uiFontSize: clamped, monoFontSize };
+    applyAll(next);
+    persist(next);
+  }, [accent, theme, applyAll, persist, uiFont, monoFont, monoFontSize]);
+
+  const setMonoFontSize = useCallback((size: number) => {
+    const clamped = Math.min(20, Math.max(12, size));
+    setMonoFontSizeState(clamped);
+    const next: ThemeSettings = { theme, accent, uiFont, monoFont, uiFontSize, monoFontSize: clamped };
+    applyAll(next);
+    persist(next);
+  }, [accent, theme, applyAll, persist, uiFont, monoFont, uiFontSize]);
 
   // Apply on mount
   useEffect(() => {
-    applyVars({ ...themes[resolveTheme(theme)], ...accents[accent] });
+    applyAll({ theme, accent, uiFont, monoFont, uiFontSize, monoFontSize });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen to OS color scheme changes when theme is 'system'
   useEffect(() => {
     if (theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const handler = () => applyVars(themes[mq.matches ? 'light' : 'dark']);
+    const handler = () => applyAll({ theme: mq.matches ? 'light' : 'dark', accent, uiFont, monoFont, uiFontSize, monoFontSize });
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
-  }, [theme]);
+  }, [theme, accent, applyAll, uiFont, monoFont, uiFontSize, monoFontSize]);
 
   const resolvedTheme = resolveTheme(theme);
 
   return (
-    <ThemeContext.Provider value={{ theme, accent, resolvedTheme, setTheme, setAccent }}>
+    <ThemeContext.Provider value={{
+      theme,
+      accent,
+      uiFont,
+      monoFont,
+      uiFontSize,
+      monoFontSize,
+      resolvedTheme,
+      setTheme,
+      setAccent,
+      setUiFont,
+      setMonoFont,
+      setUiFontSize,
+      setMonoFontSize,
+    }}>
       {children}
     </ThemeContext.Provider>
   );

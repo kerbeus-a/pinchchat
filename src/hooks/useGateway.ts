@@ -13,9 +13,11 @@ export function useGateway() {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSession, setActiveSession] = useState('agent:main:main');
+  const [activeSession, setActiveSession] = useState(import.meta.env.VITE_AGENT_SESSION || 'agent:main:main');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isSessionsLoaded, setIsSessionsLoaded] = useState(false);
+  const [agents, setAgents] = useState<string[]>([]);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null); // null = checking
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -88,7 +90,7 @@ export function useGateway() {
 
   const loadAgentIdentity = useCallback(async () => {
     try {
-      const res = await clientRef.current?.send('agent.identity.get', {});
+      const res = await clientRef.current?.send('agent.identity.get', { sessionKey: activeSessionRef.current });
       if (res) {
         setAgentIdentity({
           name: res.name as string | undefined,
@@ -102,20 +104,37 @@ export function useGateway() {
     }
   }, []);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      const res = await clientRef.current?.send('agents.list', {});
+      const agentList = res?.agents as Array<Record<string, unknown>> | undefined;
+      if (agentList) {
+        const ids = agentList.map(a => (a.id || a.agentId) as string).filter(Boolean).sort();
+        setAgents(ids);
+      }
+    } catch (err) {
+      console.warn('[loadAgents] agents.list not supported, agent picker will be unavailable', err);
+    }
+  }, []);
+
   const loadSessions = useCallback(async () => {
     try {
       const res = await clientRef.current?.send('sessions.list', {});
       const sessionList = res?.sessions as Array<Record<string, unknown>> | undefined;
       if (sessionList) {
+        const agentPrefix = import.meta.env.VITE_AGENT_PREFIX;
+        const filteredSessionList = agentPrefix
+          ? sessionList.filter((s) => ((s.key || s.sessionKey) as string).startsWith(agentPrefix))
+          : sessionList;
         const deleted = getDeletedSessions();
         // Reconcile: remove blacklisted keys for sessions that no longer exist on the gateway
         // (they were successfully deleted, so no need to keep hiding them)
-        const activeKeys = new Set(sessionList.map((s) => (s.key || s.sessionKey) as string));
+        const activeKeys = new Set(filteredSessionList.map((s) => (s.key || s.sessionKey) as string));
         const reconciled = new Set([...deleted].filter((k) => activeKeys.has(k)));
         if (reconciled.size !== deleted.size) {
           localStorage.setItem('pinchchat-deleted-sessions', JSON.stringify([...reconciled]));
         }
-        setSessions(sessionList.filter((s) => !deleted.has((s.key || s.sessionKey) as string)).map((s) => ({
+        setSessions(filteredSessionList.filter((s) => !deleted.has((s.key || s.sessionKey) as string)).map((s) => ({
           key: (s.key || s.sessionKey) as string,
           label: (s.label || s.key || s.sessionKey) as string,
           messageCount: s.messageCount as number | undefined,
@@ -133,6 +152,8 @@ export function useGateway() {
       }
     } catch {
       // Silently ignore session list failures (e.g. disconnected)
+    } finally {
+      setIsSessionsLoaded(true);
     }
   }, [getDeletedSessions]);
 
@@ -188,12 +209,14 @@ export function useGateway() {
     client.onStatus((s) => {
       setStatus(s);
       if (s === 'connected') {
+        setIsGenerating(false);
         setAuthenticated(true);
         setConnectError(null);
         setIsConnecting(false);
         isConnectingRef.current = false;
         storeCredentials(bridgeUrl, agent);
         loadSessions();
+        loadAgents();
         loadAgentIdentity();
         loadHistory(activeSessionRef.current);
       } else if (s === 'disconnected' && !client.isConnected) {
@@ -325,7 +348,7 @@ export function useGateway() {
     isConnectingRef.current = true;
     setConnectError(null);
     client.connect();
-  }, [handleAgentEvent, loadHistory, loadSessions, loadAgentIdentity]);
+  }, [handleAgentEvent, loadHistory, loadSessions, loadAgents, loadAgentIdentity]);
 
   // On mount: try stored credentials
   const initRef = useRef(false);
@@ -395,24 +418,16 @@ export function useGateway() {
     loadHistory(key);
   }, [loadHistory]);
 
-  const createNewSession = useCallback(async () => {
+  const createSessionWithConfig = useCallback(async (agentId: string, channel: string) => {
     const client = clientRef.current;
     if (!client) return;
 
-    const currentKey = activeSessionRef.current;
-    const currentSession = sessionsRef.current.find((s) => s.key === currentKey);
-    const targetAgentId = currentSession?.agentId || extractAgentIdFromKey(currentKey) || 'main';
-    const targetChannel = currentSession?.channel || 'webchat';
-    const expectedPrefix = `agent:${targetAgentId}:`;
-
+    const expectedPrefix = `agent:${agentId}:`;
     const fallbackKey = `${expectedPrefix}webchat-${Date.now()}`;
     let nextKey = fallbackKey;
 
     try {
-      const res = await client.send('sessions.create', {
-        channel: targetChannel,
-        agentId: targetAgentId,
-      }) as JsonPayload | undefined;
+      const res = await client.send('sessions.create', { channel, agentId }) as JsonPayload | undefined;
       const fromRoot = (typeof res?.key === 'string' && res.key)
         || (typeof res?.sessionKey === 'string' && res.sessionKey)
         || null;
@@ -426,16 +441,31 @@ export function useGateway() {
         nextKey = returnedKey;
       }
     } catch (err) {
-      console.warn('[createNewSession] sessions.create not supported, using fallback key', err);
+      console.warn('[createSession] sessions.create not supported, using fallback key', err);
     }
 
     switchSession(nextKey);
     try {
       await loadSessions();
     } catch (err) {
-      console.warn('[createNewSession] failed to refresh session list', err);
+      console.warn('[createSession] failed to refresh session list', err);
     }
   }, [switchSession, loadSessions]);
+
+  const createNewSession = useCallback(async () => {
+    const currentKey = activeSessionRef.current;
+    const currentSession = sessionsRef.current.find((s) => s.key === currentKey);
+    const targetAgentId = currentSession?.agentId || extractAgentIdFromKey(currentKey) || 'main';
+    const targetChannel = currentSession?.channel || 'webchat';
+    await createSessionWithConfig(targetAgentId, targetChannel);
+  }, [createSessionWithConfig]);
+
+  const createSessionForAgent = useCallback(async (agentId: string) => {
+    const currentKey = activeSessionRef.current;
+    const currentSession = sessionsRef.current.find((s) => s.key === currentKey);
+    const targetChannel = currentSession?.channel || 'webchat';
+    await createSessionWithConfig(agentId, targetChannel);
+  }, [createSessionWithConfig]);
 
   const login = useCallback((bridgeUrl: string, agent: string) => {
     setupClient(bridgeUrl, agent);
@@ -445,9 +475,11 @@ export function useGateway() {
     try {
       await clientRef.current?.send('sessions.delete', { key, deleteTranscript: true });
     } catch {
-      // Ignore delete failures — blacklist will hide it anyway
+      // If the gateway rejects the delete, don't blacklist — the session still exists
+      // and hiding it would make it permanently invisible until localStorage is cleared.
+      return;
     }
-    // Persist to blacklist so it stays hidden after refresh
+    // Only blacklist and hide if the delete actually succeeded
     addDeletedSession(key);
     // Remove from local state
     setSessions(prev => prev.filter(s => s.key !== key));
@@ -497,8 +529,9 @@ export function useGateway() {
   }, []);
 
   return {
-    status, messages, sessions: enrichedSessions, activeSession, isGenerating, isLoadingHistory,
-    sendMessage, abort, switchSession, createNewSession, loadSessions, deleteSession,
+    status, messages, sessions: enrichedSessions, agents, activeSession, isGenerating, isLoadingHistory,
+    isSessionsLoaded,
+    sendMessage, abort, switchSession, createNewSession, createSessionForAgent, loadSessions, deleteSession,
     authenticated, login, logout, connectError, isConnecting, agentIdentity,
     getClient, addEventListener,
   };

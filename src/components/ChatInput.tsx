@@ -18,6 +18,11 @@ export interface ReplyContext {
   preview: string;
 }
 
+export interface ComposerInsertRequest {
+  id: string;
+  text: string;
+}
+
 interface Props {
   onSend: (text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => void;
   onNewSession?: () => Promise<void>;
@@ -27,23 +32,11 @@ interface Props {
   sessionKey?: string;
   replyTo?: ReplyContext | null;
   onCancelReply?: () => void;
+  insertRequest?: ComposerInsertRequest | null;
 }
 
 const MAX_BASE64_CHARS = 300 * 1024; // ~225KB real, well under 512KB WS limit (JSON overhead + base64 bloat)
 const MAX_IMAGE_PIXELS = 1280; // Max dimension for resize
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(',')[1] || '';
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function compressImage(file: File, maxBase64Chars: number): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
@@ -91,13 +84,22 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disabled, sessionKey, replyTo, onCancelReply }: Props) {
+function toQuotedContext(text: string): string {
+  return text
+    .trim()
+    .split('\n')
+    .map(line => `> ${line}`)
+    .join('\n');
+}
+
+export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disabled, sessionKey, replyTo, onCancelReply, insertRequest }: Props) {
   const t = useT();
   const { sendOnEnter, toggle: toggleSendShortcut } = useSendShortcut();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<FileAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showPreview, setShowPreview] = useState(() => localStorage.getItem('pinchchat-md-preview') === '1');
+  const [isComposing, setIsComposing] = useState(false);
   const [showSlash, setShowSlash] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -105,6 +107,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
   // Per-session draft storage
   const draftsRef = useRef<Map<string, string>>(new Map());
   const prevSessionRef = useRef<string | undefined>(sessionKey);
+  const lastInsertIdRef = useRef<string | null>(null);
 
   // Save draft to previous session and restore draft for new session
   useEffect(() => {
@@ -140,28 +143,46 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
     }
   }, [sessionKey, disabled]);
 
+  useEffect(() => {
+    if (!insertRequest?.id || lastInsertIdRef.current === insertRequest.id) return;
+    lastInsertIdRef.current = insertRequest.id;
+
+    const quoted = toQuotedContext(insertRequest.text);
+    if (!quoted) return;
+
+    setText(prev => {
+      const next = prev.trim()
+        ? `${prev.replace(/\s*$/, '')}\n\n${quoted}\n\n`
+        : `${quoted}\n\n`;
+
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        const pos = next.length;
+        textarea.setSelectionRange(pos, pos);
+      });
+
+      return next;
+    });
+  }, [insertRequest]);
+
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
     const newFiles: FileAttachment[] = [];
     for (const file of Array.from(fileList)) {
       if (file.size > 20 * 1024 * 1024) continue; // 20MB max
-      const isImage = file.type.startsWith('image/');
-      let base64: string;
-      let mimeType: string;
-      if (isImage) {
-        // Compress images to fit WS payload limit
-        const compressed = await compressImage(file, MAX_BASE64_CHARS);
-        base64 = compressed.base64;
-        mimeType = compressed.mimeType;
-      } else {
-        base64 = await fileToBase64(file);
-        mimeType = file.type || 'application/octet-stream';
-      }
+      // Only images are supported — the OpenClaw gateway drops non-image attachments
+      if (!file.type.startsWith('image/')) continue;
+      // Compress images to fit WS payload limit
+      const compressed = await compressImage(file, MAX_BASE64_CHARS);
+      const base64 = compressed.base64;
+      const mimeType = compressed.mimeType;
       newFiles.push({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         file,
         base64,
         mimeType,
-        preview: isImage ? `data:${mimeType};base64,${base64}` : undefined,
+        preview: `data:${mimeType};base64,${base64}`,
       });
     }
     setFiles(prev => [...prev, ...newFiles]);
@@ -207,6 +228,10 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      // Prevent sending when IME is composing (e.g., Chinese/Japanese input)
+      // Check both React state and native event property — on some browsers
+      // compositionend fires before keydown, making isComposing stale
+      if (isComposing || e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (sendOnEnter) {
         // Enter sends, Shift+Enter for newline
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -374,7 +399,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
               multiple
               className="hidden"
               onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
-              accept="image/*,.pdf,.txt,.md,.json,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.yaml,.yml,.xml,.sql,.sh,.env,.toml"
+              accept="image/*"
             />
 
             <textarea
@@ -383,6 +408,8 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
               value={text}
               onChange={(e) => { setText(e.target.value); setShowSlash(shouldShowSlashMenu(e.target.value)); }}
               onKeyDown={handleKeyDown}
+              onCompositionStart={() => setIsComposing(true)}
+              onCompositionEnd={() => setIsComposing(false)}
               onPaste={handlePaste}
               placeholder={t('chat.inputPlaceholder')}
               aria-label={t('chat.inputLabel')}

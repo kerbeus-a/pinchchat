@@ -1,8 +1,8 @@
-import { useCallback, useState, useRef, useEffect, forwardRef } from 'react';
+import { lazy, Suspense, useCallback, useState, useRef, useEffect, forwardRef } from 'react';
 import { Menu, Sparkles, LogOut, Cpu, Bot, Download, Minimize2, Info, Copy, Check, Settings } from 'lucide-react';
 import type { ConnectionStatus, Session, ChatMessage } from '../types';
 import { useT } from '../hooks/useLocale';
-import { SettingsModal } from './SettingsModal';
+const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })));
 import { copyToClipboard } from '../lib/clipboard';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from '../lib/sessionName';
 import { messagesToMarkdown, downloadFile } from '../lib/exportChat';
@@ -159,7 +159,11 @@ export function Header({ status, sessionKey, onToggleSidebar, activeSessionData,
           </div>
         );
       })()}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} soundEnabled={soundEnabled} onToggleSound={onToggleSound} />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} soundEnabled={soundEnabled} onToggleSound={onToggleSound} />
+        </Suspense>
+      )}
     </>
   );
 }

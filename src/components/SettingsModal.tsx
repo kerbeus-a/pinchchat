@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
-import { X, Settings, Sun, Moon, Monitor, Laptop, Check, Volume2, VolumeOff } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Settings, Sun, Moon, Monitor, Laptop, Check, Volume2, VolumeOff, Type, CaseSensitive } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { useSendShortcut } from '../hooks/useSendShortcut';
 import { useT, useLocale } from '../hooks/useLocale';
 import { setLocale, supportedLocales, localeLabels } from '../lib/i18n';
-import type { ThemeName, AccentColor } from '../contexts/ThemeContextDef';
+import type { ThemeName, AccentColor, UiFont, MonoFont } from '../contexts/ThemeContextDef';
+import { uiFontStacks, monoFontStacks } from '../contexts/ThemeContextDef';
 import type { TranslationKey } from '../lib/i18n';
 
 const themeOptions: { value: ThemeName; icon: typeof Sun; labelKey: TranslationKey }[] = [
@@ -62,9 +63,51 @@ function ToggleSwitch({ checked, onChange, label }: { checked: boolean; onChange
 
 export function SettingsModal({ open, onClose, soundEnabled, onToggleSound }: Props) {
   const t = useT();
-  const { theme, accent, setTheme, setAccent } = useTheme();
+  const {
+    theme,
+    accent,
+    uiFont,
+    monoFont,
+    uiFontSize,
+    monoFontSize,
+    setTheme,
+    setAccent,
+    setUiFont,
+    setMonoFont,
+    setUiFontSize,
+    setMonoFontSize,
+  } = useTheme();
   const { sendOnEnter, toggle: toggleSendShortcut } = useSendShortcut();
   const currentLocale = useLocale();
+  type TabId = 'appearance' | 'typography' | 'chat' | 'notifications';
+  const [tab, setTab] = useState<TabId>('appearance');
+
+  const tabs = useMemo(() => {
+    const base: { id: TabId; label: string }[] = [
+      { id: 'appearance', label: t('settings.tab.appearance') },
+      { id: 'typography', label: t('settings.tab.typography') },
+      { id: 'chat', label: t('settings.tab.chat') },
+    ];
+    if (onToggleSound) base.push({ id: 'notifications', label: t('settings.tab.notifications') });
+    return base;
+  }, [onToggleSound, t]);
+
+  const uiFontOptions: { value: UiFont; label: string; sample: string }[] = [
+    { value: 'system', label: 'System', sample: 'Segoe/UI' },
+    { value: 'inter', label: 'Inter', sample: 'Inter' },
+    { value: 'segoe', label: 'Segoe UI', sample: 'Segoe' },
+    { value: 'sf', label: 'SF Pro', sample: 'SF' },
+  ];
+
+  const monoFontOptions: { value: MonoFont; label: string; sample: string }[] = [
+    { value: 'jetbrains', label: 'JetBrains Mono', sample: 'JetBrains' },
+    { value: 'fira', label: 'Fira Code', sample: 'Fira' },
+    { value: 'cascadia', label: 'Cascadia Code', sample: 'Cascadia' },
+    { value: 'system-mono', label: 'System mono', sample: 'System' },
+  ];
+
+  const uiSizes = [14, 15, 16, 17, 18];
+  const monoSizes = [13, 14, 15, 16, 17];
 
   useEffect(() => {
     if (!open) return;
@@ -90,7 +133,7 @@ export function SettingsModal({ open, onClose, soundEnabled, onToggleSound }: Pr
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-sm mx-4 rounded-3xl border border-pc-border bg-[var(--pc-bg-base)]/95 backdrop-blur-xl shadow-2xl animate-fade-in"
+        className="relative w-full max-w-xl mx-4 rounded-3xl border border-pc-border bg-[var(--pc-bg-base)]/95 backdrop-blur-xl shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -110,96 +153,231 @@ export function SettingsModal({ open, onClose, soundEnabled, onToggleSound }: Pr
 
         {/* Body */}
         <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-          {/* Appearance */}
-          <SectionTitle>{t('settings.appearance')}</SectionTitle>
-
-          {/* Theme mode */}
-          <div className="mb-3">
-            <div className="text-xs text-pc-text-secondary mb-2">{t('theme.mode')}</div>
-            <div className="flex gap-1.5">
-              {themeOptions.map(opt => {
-                const Icon = opt.icon;
-                const active = theme === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    onClick={() => setTheme(opt.value)}
-                    aria-pressed={active}
-                    className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border text-xs transition-all ${
-                      active
-                        ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
-                        : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
-                    }`}
-                  >
-                    <Icon size={16} />
-                    <span>{t(opt.labelKey)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Accent color */}
-          <div className="mb-1">
-            <div className="text-xs text-pc-text-secondary mb-2">{t('theme.accent')}</div>
-            <div className="flex gap-2">
-              {accentOptions.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setAccent(opt.value)}
-                  className="relative h-7 w-7 rounded-full border-2 transition-all flex items-center justify-center"
-                  aria-pressed={accent === opt.value}
-                  aria-label={`${opt.value} accent`}
-                  style={{
-                    backgroundColor: opt.color,
-                    borderColor: accent === opt.value ? opt.color : 'transparent',
-                    boxShadow: accent === opt.value ? `0 0 8px ${opt.color}40` : 'none',
-                  }}
-                  title={opt.value}
-                >
-                  {accent === opt.value && <Check size={14} className="text-white drop-shadow" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Language */}
-          <SectionTitle>{t('settings.language')}</SectionTitle>
-          <div className="flex flex-wrap gap-1.5">
-            {supportedLocales.map(loc => (
+          <div className="flex gap-2 mb-4">
+            {tabs.map(tTab => (
               <button
-                key={loc}
-                onClick={() => setLocale(loc)}
-                aria-pressed={currentLocale === loc}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs transition-all ${
-                  currentLocale === loc
-                    ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light font-medium'
+                key={tTab.id}
+                onClick={() => setTab(tTab.id)}
+                className={`flex-1 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+                  tab === tTab.id
+                    ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
                     : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
                 }`}
+                aria-label={tTab.label}
+                aria-selected={tab === tTab.id}
               >
-                {currentLocale === loc && <Check size={12} />}
-                {localeLabels[loc] || loc.toUpperCase()}
+                {tTab.label}
               </button>
             ))}
           </div>
 
-          {/* Chat */}
-          <SectionTitle>{t('settings.chat')}</SectionTitle>
-          <div className="flex items-center justify-between py-1.5">
-            <div className="text-xs text-pc-text-secondary">{t('settings.sendShortcut')}</div>
-            <button
-              onClick={toggleSendShortcut}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-pc-border text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] transition-colors"
-            >
-              {sendOnEnter
-                ? t('settings.sendEnter')
-                : (isMac ? '⌘+' : 'Ctrl+') + t('settings.sendEnter')
-              }
-            </button>
-          </div>
+          {tab === 'appearance' && (
+            <>
+              <SectionTitle>{t('settings.appearance')}</SectionTitle>
+              <div className="mb-3">
+                <div className="text-xs text-pc-text-secondary mb-2">{t('theme.mode')}</div>
+                <div className="flex gap-1.5">
+                  {themeOptions.map(opt => {
+                    const Icon = opt.icon;
+                    const active = theme === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setTheme(opt.value)}
+                        aria-pressed={active}
+                        aria-label={t(opt.labelKey)}
+                        className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border text-xs transition-all ${
+                          active
+                            ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
+                            : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                        }`}
+                      >
+                        <Icon size={16} />
+                        <span>{t(opt.labelKey)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Notifications */}
-          {onToggleSound && (
+              <div className="mb-4">
+                <div className="text-xs text-pc-text-secondary mb-2">{t('theme.accent')}</div>
+                <div className="flex gap-2">
+                  {accentOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setAccent(opt.value)}
+                      className="relative h-7 w-7 rounded-full border-2 transition-all flex items-center justify-center"
+                      aria-pressed={accent === opt.value}
+                      aria-label={`${opt.value} accent`}
+                      style={{
+                        backgroundColor: opt.color,
+                        borderColor: accent === opt.value ? opt.color : 'transparent',
+                        boxShadow: accent === opt.value ? `0 0 8px ${opt.color}40` : 'none',
+                      }}
+                      title={opt.value}
+                    >
+                      {accent === opt.value && <Check size={14} className="text-white drop-shadow" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <SectionTitle>{t('settings.language')}</SectionTitle>
+              <div className="flex flex-wrap gap-1.5">
+                {supportedLocales.map(loc => (
+                  <button
+                    key={loc}
+                    onClick={() => setLocale(loc)}
+                    aria-pressed={currentLocale === loc}
+                    aria-label={localeLabels[loc] || loc.toUpperCase()}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs transition-all ${
+                      currentLocale === loc
+                        ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light font-medium'
+                        : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                    }`}
+                  >
+                    {currentLocale === loc && <Check size={12} />}
+                    {localeLabels[loc] || loc.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tab === 'typography' && (
+            <>
+              <SectionTitle>{t('settings.typography')}</SectionTitle>
+
+              <div className="mb-4">
+                <div className="flex items-center gap-2 text-xs text-pc-text-secondary mb-2">
+                  <Type size={14} />
+                  {t('settings.fontUi')}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {uiFontOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setUiFont(opt.value)}
+                      aria-pressed={uiFont === opt.value}
+                      aria-label={`${t('settings.fontUi')}: ${opt.label}`}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-all ${
+                        uiFont === opt.value
+                          ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
+                          : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                      }`}
+                      style={{ fontFamily: uiFontStacks[opt.value] }}
+                    >
+                      <span className="text-sm">{opt.sample}</span>
+                      <span className="text-[11px] text-pc-text-faint">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <div className="flex items-center gap-2 text-xs text-pc-text-secondary mb-2">
+                  <CaseSensitive size={14} />
+                  {t('settings.fontMono')}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {monoFontOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setMonoFont(opt.value)}
+                      aria-pressed={monoFont === opt.value}
+                      aria-label={`${t('settings.fontMono')}: ${opt.label}`}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-all ${
+                        monoFont === opt.value
+                          ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
+                          : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                      }`}
+                      style={{ fontFamily: monoFontStacks[opt.value] }}
+                    >
+                      <span className="text-sm">{opt.sample}</span>
+                      <span className="text-[11px] text-pc-text-faint">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="text-[11px] text-pc-text-faint mb-4 text-center">{t('settings.fontNote')}</div>
+
+              <div className="mb-4">
+                <div className="text-xs text-pc-text-secondary mb-2">{t('settings.fontSize')}</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {uiSizes.map(size => (
+                    <button
+                      key={size}
+                      onClick={() => setUiFontSize(size)}
+                      aria-pressed={uiFontSize === size}
+                      aria-label={`${t('settings.fontSize')}: ${size}px`}
+                      className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                        uiFontSize === size
+                          ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
+                          : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                      }`}
+                    >
+                      {size}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <div className="text-xs text-pc-text-secondary mb-2">{t('settings.fontMonoSize')}</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {monoSizes.map(size => (
+                    <button
+                      key={size}
+                      onClick={() => setMonoFontSize(size)}
+                      aria-pressed={monoFontSize === size}
+                      aria-label={`${t('settings.fontMonoSize')}: ${size}px`}
+                      className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                        monoFontSize === size
+                          ? 'border-pc-accent/40 bg-pc-accent/10 text-pc-accent-light'
+                          : 'border-pc-border text-pc-text-muted hover:bg-[var(--pc-hover)]'
+                      }`}
+                    >
+                      {size}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-pc-border bg-[var(--pc-bg-surface)]/70 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-pc-text-faint mb-2">{t('settings.preview')}</div>
+                <div className="text-sm text-pc-text mb-2" style={{ fontFamily: 'var(--pc-font-ui)', fontSize: 'var(--pc-font-size)' }}>
+                  {t('settings.previewText')}
+                </div>
+                <div className="rounded-xl border border-dashed border-pc-border p-2 bg-[var(--pc-bg-code)] text-[13px]" style={{ fontFamily: 'var(--pc-font-mono)', fontSize: 'var(--pc-font-size-mono)' }}>
+                  const hello = 'PinchChat'; // typography preview
+                </div>
+                <div className="text-[11px] text-pc-text-faint mt-2 text-center">{t('settings.fontNote')}</div>
+              </div>
+            </>
+          )}
+
+          {tab === 'chat' && (
+            <>
+              <SectionTitle>{t('settings.chat')}</SectionTitle>
+              <div className="flex items-center justify-between py-1.5">
+                <div className="text-xs text-pc-text-secondary">{t('settings.sendShortcut')}</div>
+                <button
+                  onClick={toggleSendShortcut}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-pc-border text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] transition-colors"
+                  aria-label={t('settings.sendShortcut')}
+                >
+                  {sendOnEnter
+                    ? t('settings.sendEnter')
+                    : (isMac ? '⌘+' : 'Ctrl+') + t('settings.sendEnter')
+                  }
+                </button>
+              </div>
+            </>
+          )}
+
+          {tab === 'notifications' && onToggleSound && (
             <>
               <SectionTitle>{t('settings.notifications')}</SectionTitle>
               <div className="flex items-center justify-between py-1.5">

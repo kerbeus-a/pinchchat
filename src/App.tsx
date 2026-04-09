@@ -1,17 +1,21 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useGateway } from './hooks/useGateway';
 import { useSecondarySession } from './hooks/useSecondarySession';
+import { useExecApprovals } from './hooks/useExecApprovals';
+import { ExecApprovalModal } from './components/ExecApprovalModal';
 import { useNotifications, setBaseTitle } from './hooks/useNotifications';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { LoginScreen } from './components/LoginScreen';
 import { ConnectionBanner } from './components/ConnectionBanner';
 import { KeyboardShortcuts } from './components/KeyboardShortcuts';
+import { Toast } from './components/Toast';
 import { ToolCollapseProvider } from './contexts/ToolCollapseContext';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from './lib/sessionName';
 import { X } from 'lucide-react';
 import { useT } from './hooks/useLocale';
 import { useSwipeSidebar } from './hooks/useSwipeSidebar';
+import { useSessionDeepLink } from './hooks/useSessionDeepLink';
 
 const Chat = lazy(() => import('./components/Chat').then(m => ({ default: m.Chat })));
 
@@ -28,10 +32,10 @@ function getSavedSplitRatio(): number {
 
 export default function App() {
   const {
-    status, messages, sessions, activeSession, isGenerating, isLoadingHistory,
-    sendMessage, abort, switchSession, deleteSession, createNewSession,
+    status, messages, sessions, agents, activeSession, isGenerating, isLoadingHistory,
+    sendMessage, abort, switchSession, deleteSession, createNewSession, createSessionForAgent,
     authenticated, login, logout, connectError, isConnecting, agentIdentity,
-    getClient, addEventListener,
+    getClient, addEventListener, isSessionsLoaded,
   } = useGateway();
   const [splitSession, setSplitSession] = useState<string | null>(null);
   const [splitRatio, setSplitRatio] = useState(getSavedSplitRatio);
@@ -39,6 +43,7 @@ export default function App() {
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const splitRatioRef = useRef(splitRatio);
   const secondary = useSecondarySession(getClient, addEventListener, splitSession);
+  const { currentApproval, pendingApprovals, resolve: resolveApproval } = useExecApprovals(getClient, addEventListener, status);
   const t = useT();
   const resolveAgentDisplayName = useCallback((sessionKey: string | null | undefined): string | undefined => {
     if (!sessionKey) return agentIdentity?.name;
@@ -109,6 +114,32 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
+
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((options: { message: string; type: 'success' | 'warning' }) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (toastLeaveTimerRef.current) clearTimeout(toastLeaveTimerRef.current);
+    setToast(options);
+    toastLeaveTimerRef.current = setTimeout(() => setToast(prev => prev ? { ...prev, leaving: true } : null), 1700);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (toastLeaveTimerRef.current) clearTimeout(toastLeaveTimerRef.current);
+  }, []);
+
+  useSessionDeepLink({
+    sessions,
+    authenticated,
+    isSessionsLoaded,
+    switchSession,
+    onNotFound: useCallback(() => showToast({ message: t('session.notFound'), type: 'warning' }), [showToast, t]),
+  });
+
   const { notify, soundEnabled, toggleSound } = useNotifications();
   const prevMessageCountRef = useRef(messages.length);
 
@@ -182,6 +213,7 @@ export default function App() {
       <a href="#chat-input" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-pc-accent focus:text-white focus:text-sm focus:font-medium">{t('app.skipToChat')}</a>
       <Sidebar
         sessions={sessions}
+        agents={agents}
         activeSession={activeSession}
         onSwitch={switchSession}
         onDelete={deleteSession}
@@ -190,6 +222,9 @@ export default function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onRename={handleRename}
+        onNewSession={createNewSession}
+        onNewSessionForAgent={createSessionForAgent}
+        onToast={showToast}
       />
       <div ref={splitContainerRef} className="flex-1 flex min-w-0" aria-hidden={sidebarOpen ? true : undefined}>
         {/* Primary pane */}
@@ -232,7 +267,15 @@ export default function App() {
         )}
       </div>
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      {currentApproval && (
+        <ExecApprovalModal
+          approval={currentApproval}
+          queueSize={pendingApprovals.length}
+          onResolve={resolveApproval}
+        />
+      )}
     </div>
+    {toast && <Toast message={toast.message} type={toast.type} leaving={toast.leaving} />}
     </ToolCollapseProvider>
   );
 }

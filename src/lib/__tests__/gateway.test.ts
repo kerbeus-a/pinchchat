@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GatewayClient } from '../gateway';
+import type { DeviceIdentity } from '../deviceIdentity';
+import * as deviceIdentityModule from '../deviceIdentity';
+
+vi.mock('../deviceIdentity', () => ({
+  buildDeviceAuthPayload: vi.fn(),
+  signPayload: vi.fn(),
+}));
 
 /* ------------------------------------------------------------------ */
 /*  Minimal WebSocket mock                                             */
@@ -50,6 +57,7 @@ beforeEach(() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).WebSocket = MockWebSocket;
   vi.useFakeTimers();
+  vi.clearAllMocks();
 });
 
 afterEach(() => {
@@ -294,6 +302,44 @@ describe('GatewayClient', () => {
     expect(req.params.auth.token).toBe('tok');
 
     // Clean up
+    gw.disconnect();
+  });
+
+  it('password mode with deviceIdentity: signs with token:null and sends auth.password', async () => {
+    const buildPayload = vi.mocked(deviceIdentityModule.buildDeviceAuthPayload);
+    const sign = vi.mocked(deviceIdentityModule.signPayload);
+    buildPayload.mockReturnValue('mock-device-payload');
+    sign.mockResolvedValue('mock-sig');
+
+    // In password mode authToken holds the password string, not a JWT/token.
+    // buildDeviceAuthPayload must receive token:null so the gateway signature
+    // verification matches (gateway sees no token segment in the connect request).
+    const gw = new GatewayClient('ws://test:1234', 'my-secret-password', 'password');
+    const mockIdentity: DeviceIdentity = {
+      id: 'device-id-abc',
+      publicKeyRaw: 'pubkey-raw-abc',
+      keyPair: { privateKey: {} as CryptoKey, publicKey: {} as CryptoKey },
+    };
+    gw.setDeviceIdentity(mockIdentity);
+
+    gw.connect();
+    await vi.advanceTimersByTimeAsync(1);
+
+    const ws = MockWebSocket.instances[0]!;
+    ws._receive({ type: 'event', event: 'connect.challenge', payload: { nonce: 'nonce-xyz' } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // buildDeviceAuthPayload must be called with token: null (not the password)
+    expect(buildPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ token: null }),
+    );
+
+    // The connect request must use auth.password, not auth.token
+    const req = JSON.parse(ws.sent[0]!);
+    expect(req.method).toBe('connect');
+    expect(req.params.auth.password).toBe('my-secret-password');
+    expect(req.params.auth.token).toBeUndefined();
+
     gw.disconnect();
   });
 

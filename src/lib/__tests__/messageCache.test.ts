@@ -57,4 +57,39 @@ describe('mergeWithCache', () => {
     expect(result.messages[0]).toMatchObject({ id: 'old', isArchived: true });
     expect(result.messages[1].isCompactionSeparator).toBe(true);
   });
+
+  it('does not mark messages as compacted when gateway is a superset of cache', () => {
+    const a = makeMsg('a', 'user', 1000);
+    const b = makeMsg('b', 'assistant', 2000);
+    const c = makeMsg('c', 'user', 3000);
+    const cached = [a, b];
+    const gateway = [a, b, c]; // gateway has more than cache
+    const result = mergeWithCache(gateway, cached);
+    expect(result.wasCompacted).toBe(false);
+    expect(result.messages).toEqual(gateway);
+  });
+
+  it('preserves message order — archived before separator before gateway', () => {
+    const old = [makeMsg('x', 'user', 100), makeMsg('y', 'assistant', 200)];
+    const gw = [makeMsg('z', 'user', 500), makeMsg('w', 'assistant', 600)];
+    const cached = [...old, ...gw];
+    const result = mergeWithCache(gw, cached);
+    expect(result.wasCompacted).toBe(true);
+    const ids = result.messages.map(m => m.id);
+    // x, y (archived), separator, z, w
+    expect(ids[0]).toBe('x');
+    expect(ids[1]).toBe('y');
+    expect(ids[2]).toMatch(/^compaction-separator-/);
+    expect(ids[3]).toBe('z');
+    expect(ids[4]).toBe('w');
+  });
+
+  it('archived messages are not mutated — original objects stay unchanged', () => {
+    const old = makeMsg('old', 'user', 100);
+    const gw = [makeMsg('new', 'user', 500)];
+    const result = mergeWithCache(gw, [old, ...gw]);
+    expect(result.messages[0]).toMatchObject({ isArchived: true });
+    // Original should NOT have isArchived
+    expect((old as Record<string, unknown>).isArchived).toBeUndefined();
+  });
 });
