@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { HermesGatewayClient as GatewayClient, JsonPayload } from '../lib/hermesGateway';
+import type { GatewayClient, JsonPayload } from '../lib/gateway';
 import type { ChatMessage, MessageBlock } from '../types';
 import { parseHistoryMessages } from '../lib/historyParser';
 import { extractText, extractThinking } from '../lib/messageExtract';
