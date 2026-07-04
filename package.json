@@ -1,6 +1,6 @@
 {
   "name": "kinchat",
-  "version": "1.71.3-kin.1",
+  "version": "1.71.4-kin.1",
   "description": "Webchat UI for Kin: sessions, streaming, tool-call visibility for personas (Kerbeus, Beatrice, BeeQueen).",
   "type": "module",
   "license": "MIT",
