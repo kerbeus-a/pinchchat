@@ -1,4 +1,4 @@
-// PinchChat Service Worker — cache static assets for offline/instant load
+// PinchChat Service Worker: cache static assets for offline/instant load
 const CACHE_NAME = 'pinchchat-v1';
 
 // Cache static assets on install
@@ -26,6 +26,10 @@ self.addEventListener('fetch', (event) => {
 
   // Don't cache API calls or WebSocket-related requests
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/ws')) return;
+  // KinChat gateway lives under /kinchat/v1/. Authenticated responses must
+  // NEVER be cached cross-user. A future `.json` GET under that path would
+  // otherwise match the static-asset regex below. [Audit kinchat-static / M1]
+  if (url.pathname.startsWith('/kinchat/v1')) return;
 
   // For navigation requests (HTML), always go network-first to get latest SPA shell
   if (event.request.mode === 'navigate') {

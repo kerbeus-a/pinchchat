@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { HermesGatewayClient, type JsonPayload } from '../lib/hermesGateway';
+import { KinGatewayClient, AuthError, type JsonPayload } from '../lib/kinGateway';
 import { genIdempotencyKey } from '../lib/utils';
 import { getStoredCredentials, storeCredentials, clearCredentials } from '../lib/hermesCredentials';
 import { getCachedMessages, setCachedMessages, mergeWithCache } from '../lib/messageCache';
@@ -9,7 +9,7 @@ import { parseHistoryMessages } from '../lib/historyParser';
 import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity } from '../types';
 
 export function useGateway() {
-  const clientRef = useRef<HermesGatewayClient | null>(null);
+  const clientRef = useRef<KinGatewayClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -17,6 +17,7 @@ export function useGateway() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isSessionsLoaded, setIsSessionsLoaded] = useState(false);
+  const firstSessionsLoadRef = useRef(true);
   const [agents, setAgents] = useState<string[]>([]);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null); // null = checking
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -97,10 +98,54 @@ export function useGateway() {
           emoji: res.emoji as string | undefined,
           avatar: res.avatar as string | undefined,
           agentId: res.agentId as string | undefined,
+          isAdmin: res.isAdmin as boolean | undefined,
         });
       }
     } catch {
       // Silently ignore — identity is optional
+    }
+  }, []);
+
+  /**
+   * Lazy-fetch a single subagent's full transcript. Admin-only on the
+   * server. Returns [] on any error (auth failure, parser refusal, etc).
+   */
+  const loadSubagentMessages = useCallback(async (sessionKey: string, subId: string) => {
+    try {
+      const res = await clientRef.current?.send('subagents.history', { sessionKey, subId });
+      const list = (res?.messages as Array<Record<string, unknown>> | undefined) ?? [];
+      return list.map(m => ({
+        id: String(m.id ?? ''),
+        role: (m.role as 'user' | 'assistant') ?? 'assistant',
+        content: (m.content as Array<{ type: 'text'; text: string }>) ?? [],
+        timestamp: (m.timestamp as number) ?? 0,
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
+
+  /**
+   * Lazy-fetch the subagent list for a parent session. Admin-only on the
+   * server; non-admin members get an empty array even if they call.
+   * No caching here — the Sidebar caches per-session in component state.
+   */
+  const loadSubagentsForSession = useCallback(async (sessionKey: string) => {
+    try {
+      const res = await clientRef.current?.send('subagents.list', { sessionKey });
+      const list = (res?.subagents as Array<Record<string, unknown>> | undefined) ?? [];
+      return list.map(s => ({
+        id: String(s.id ?? ''),
+        parentSessionKey: sessionKey,
+        agentType: (s.agentType as string | null) ?? null,
+        description: (s.description as string | null) ?? null,
+        startedAt: (s.startedAt as number | null) ?? null,
+        lastActive: (s.lastActive as number | null) ?? null,
+        messageCount: (s.messageCount as number) ?? 0,
+        preview: (s.preview as string | null) ?? null,
+      }));
+    } catch {
+      return [];
     }
   }, []);
 
@@ -116,6 +161,10 @@ export function useGateway() {
       console.warn('[loadAgents] agents.list not supported, agent picker will be unavailable', err);
     }
   }, []);
+
+  const logoutRef = useRef<(() => void) | null>(null);
+  // Forward ref so loadSessions (defined before loadHistory) can call loadHistory.
+  const loadHistoryRef = useRef<((key: string) => Promise<void>) | null>(null);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -134,7 +183,7 @@ export function useGateway() {
         if (reconciled.size !== deleted.size) {
           localStorage.setItem('pinchchat-deleted-sessions', JSON.stringify([...reconciled]));
         }
-        setSessions(filteredSessionList.filter((s) => !deleted.has((s.key || s.sessionKey) as string)).map((s) => ({
+        const mapped = filteredSessionList.filter((s) => !deleted.has((s.key || s.sessionKey) as string)).map((s) => ({
           key: (s.key || s.sessionKey) as string,
           label: (s.label || s.key || s.sessionKey) as string,
           messageCount: s.messageCount as number | undefined,
@@ -148,10 +197,37 @@ export function useGateway() {
           agentId: s.agentId as string | undefined,
           updatedAt: s.updatedAt as number | undefined,
           lastMessagePreview: s.lastMessagePreview as string | undefined,
-        })));
+        }));
+        setSessions(mapped);
+
+        // Stage 3: on first successful load, auto-open the most recent real session
+        // if we're still on the placeholder. loadHistory is called via ref set below.
+        if (firstSessionsLoadRef.current && mapped.length > 0) {
+          firstSessionsLoadRef.current = false;
+          const placeholder = import.meta.env.VITE_AGENT_SESSION || 'agent:main:main';
+          if (activeSessionRef.current === placeholder) {
+            // List is recent-first from server; tiebreak by updatedAt desc
+            const sorted = [...mapped].sort((a, b) =>
+              ((b.updatedAt ?? 0) as number) - ((a.updatedAt ?? 0) as number),
+            );
+            const mostRecent = sorted[0];
+            if (mostRecent && mostRecent.key !== placeholder) {
+              activeSessionRef.current = mostRecent.key;
+              setActiveSession(mostRecent.key);
+              loadHistoryRef.current?.(mostRecent.key);
+            }
+          }
+        }
       }
-    } catch {
-      // Silently ignore session list failures (e.g. disconnected)
+    } catch (err) {
+      if (err instanceof AuthError) {
+        // Definitive auth failure — surface an error and log out.
+        console.error('[loadSessions] auth error, logging out:', err.message);
+        setConnectError('Session expired — please log in again');
+        logoutRef.current?.();
+        return;
+      }
+      // Silently ignore other failures (e.g. disconnected, network hiccup)
     } finally {
       setIsSessionsLoaded(true);
     }
@@ -197,24 +273,33 @@ export function useGateway() {
     }
   }, []);
 
-  const setupClient = useCallback(async (bridgeUrl: string, agent: string) => {
+  // Wire the forward ref after loadHistory is defined.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadHistoryRef.current = loadHistory; }, [loadHistory]);
+
+  // setupClient no longer takes an `agent` param — agent is derived from
+  // /api/identity after connect(). The `_legacyAgent` param is accepted but
+  // ignored so callers from stored credentials (which still carry agent) don't
+  // need to be updated in one pass.
+  const setupClient = useCallback(async (bridgeUrl: string, _legacyAgent: string, token?: string | null) => {
     // Tear down existing client
     if (clientRef.current) {
       clientRef.current.disconnect();
     }
 
-    const client = new HermesGatewayClient(bridgeUrl, agent);
+    const client = new KinGatewayClient(bridgeUrl, token);
     clientRef.current = client;
 
     client.onStatus((s) => {
       setStatus(s);
       if (s === 'connected') {
+        const resolvedAgent = client.memberId;
         setIsGenerating(false);
         setAuthenticated(true);
         setConnectError(null);
         setIsConnecting(false);
         isConnectingRef.current = false;
-        storeCredentials(bridgeUrl, agent);
+        storeCredentials(bridgeUrl, resolvedAgent, token ?? null);
         loadSessions();
         loadAgents();
         loadAgentIdentity();
@@ -347,7 +432,15 @@ export function useGateway() {
     setIsConnecting(true);
     isConnectingRef.current = true;
     setConnectError(null);
-    client.connect();
+    client.connect().catch((err) => {
+      if (err instanceof AuthError) {
+        setConnectError('Invalid token — please check and try again');
+        setIsConnecting(false);
+        isConnectingRef.current = false;
+        setAuthenticated(false);
+      }
+      // Network errors set status disconnected via onStatus; no extra handling needed.
+    });
   }, [handleAgentEvent, loadHistory, loadSessions, loadAgents, loadAgentIdentity]);
 
   // On mount: try stored credentials
@@ -357,7 +450,7 @@ export function useGateway() {
     initRef.current = true;
     const stored = getStoredCredentials();
     if (stored) {
-      setupClient(stored.bridgeUrl, stored.agent);
+      setupClient(stored.bridgeUrl, stored.agent, stored.token ?? null);
     } else {
       setAuthenticated(false);
     }
@@ -467,8 +560,8 @@ export function useGateway() {
     await createSessionWithConfig(agentId, targetChannel);
   }, [createSessionWithConfig]);
 
-  const login = useCallback((bridgeUrl: string, agent: string) => {
-    setupClient(bridgeUrl, agent);
+  const login = useCallback((bridgeUrl: string, token?: string | null) => {
+    setupClient(bridgeUrl, '', token);
   }, [setupClient]);
 
   const deleteSession = useCallback(async (key: string) => {
@@ -499,6 +592,7 @@ export function useGateway() {
       clientRef.current = null;
     }
     clearCredentials();
+    firstSessionsLoadRef.current = true; // reset for next login
     setAuthenticated(false);
     setMessages([]);
     setSessions([]);
@@ -506,12 +600,31 @@ export function useGateway() {
     setConnectError(null);
   }, []);
 
-  // Periodic session refresh every 30s
+  // Wire logout ref so loadSessions can call it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
+
+  // Periodic refresh: sessions list every 8s, active session messages every
+  // 5s. Catches messages arriving from OTHER channels (Telegram, voice) that
+  // the in-tab SSE never sees because the chat-send SSE only streams the
+  // outbound request's own response. Refresh frequency picked so a turn from
+  // Telegram lands in kinchat within seconds without hammering the LAN. Skip
+  // the message refresh while generation is in flight to avoid clobbering
+  // streaming deltas.
   useEffect(() => {
     if (status !== 'connected') return;
-    const interval = setInterval(loadSessions, 30000);
-    return () => clearInterval(interval);
-  }, [status, loadSessions]);
+    const sessionsTimer = setInterval(loadSessions, 8000);
+    const messagesTimer = setInterval(() => {
+      const key = activeSessionRef.current;
+      if (!key) return;
+      if (isGenerating) return;
+      loadHistory(key);
+    }, 5000);
+    return () => {
+      clearInterval(sessionsTimer);
+      clearInterval(messagesTimer);
+    };
+  }, [status, loadSessions, loadHistory, isGenerating]);
 
   const enrichedSessions = sessions.map(s => ({
     ...s,
@@ -528,11 +641,18 @@ export function useGateway() {
     return client.onEvent(fn);
   }, []);
 
+  const send = useCallback((method: string, params: JsonPayload): Promise<JsonPayload> => {
+    const client = clientRef.current;
+    if (!client) return Promise.reject(new Error('Not connected'));
+    return client.send(method, params);
+  }, []);
+
   return {
     status, messages, sessions: enrichedSessions, agents, activeSession, isGenerating, isLoadingHistory,
     isSessionsLoaded,
     sendMessage, abort, switchSession, createNewSession, createSessionForAgent, loadSessions, deleteSession,
     authenticated, login, logout, connectError, isConnecting, agentIdentity,
-    getClient, addEventListener,
+    getClient, addEventListener, send,
+    loadSubagentsForSession, loadSubagentMessages,
   };
 }

@@ -3,6 +3,7 @@ import { useGateway } from './hooks/useGateway';
 import { useSecondarySession } from './hooks/useSecondarySession';
 import { useExecApprovals } from './hooks/useExecApprovals';
 import { ExecApprovalModal } from './components/ExecApprovalModal';
+import { SubagentTranscriptModal } from './components/SubagentTranscriptModal';
 import { useNotifications, setBaseTitle } from './hooks/useNotifications';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -11,6 +12,7 @@ import { ConnectionBanner } from './components/ConnectionBanner';
 import { KeyboardShortcuts } from './components/KeyboardShortcuts';
 import { Toast } from './components/Toast';
 import { ToolCollapseProvider } from './contexts/ToolCollapseContext';
+import { SwarmView } from './components/SwarmView';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from './lib/sessionName';
 import { X } from 'lucide-react';
 import { useT } from './hooks/useLocale';
@@ -35,8 +37,9 @@ export default function App() {
     status, messages, sessions, agents, activeSession, isGenerating, isLoadingHistory,
     sendMessage, abort, switchSession, deleteSession, createNewSession, createSessionForAgent,
     authenticated, login, logout, connectError, isConnecting, agentIdentity,
-    getClient, addEventListener, isSessionsLoaded,
+    getClient, addEventListener, isSessionsLoaded, loadSubagentsForSession, loadSubagentMessages,
   } = useGateway();
+  const [viewingSubagent, setViewingSubagent] = useState<import('./types').SubagentSummary | null>(null);
   const [splitSession, setSplitSession] = useState<string | null>(null);
   const [splitRatio, setSplitRatio] = useState(getSavedSplitRatio);
   const [splitDragging, setSplitDragging] = useState(false);
@@ -113,6 +116,7 @@ export default function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [showSwarm, setShowSwarm] = useState(() => window.location.hash === '#swarm');
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
@@ -193,6 +197,13 @@ export default function App() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Hash-based routing for swarm view
+  useEffect(() => {
+    const handler = () => setShowSwarm(window.location.hash === '#swarm');
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
+
   // Still checking stored credentials
   if (authenticated === null) {
     return (
@@ -225,15 +236,24 @@ export default function App() {
         onNewSession={createNewSession}
         onNewSessionForAgent={createSessionForAgent}
         onToast={showToast}
+        isAdmin={agentIdentity?.isAdmin === true}
+        loadSubagents={loadSubagentsForSession}
+        onViewSubagent={setViewingSubagent}
       />
       <div ref={splitContainerRef} className="flex-1 flex min-w-0" aria-hidden={sidebarOpen ? true : undefined}>
         {/* Primary pane */}
-        <main className="flex flex-col min-w-0" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={t('app.mainChat')}>
-          <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} />
-          <ConnectionBanner status={status} />
-          <Suspense fallback={<div className="flex-1 flex items-center justify-center text-pc-text-muted"><div className="animate-pulse text-sm">Loading…</div></div>}>
-            <Chat messages={messages} isGenerating={isGenerating} isLoadingHistory={isLoadingHistory} status={status} sessionKey={activeSession} onSend={sendMessage} onNewSession={createNewSession} onAbort={abort} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} />
-          </Suspense>
+        <main className="flex flex-col min-w-0" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={showSwarm ? 'Swarm Runner' : t('app.mainChat')}>
+          {showSwarm ? (
+            <SwarmView />
+          ) : (
+            <>
+              <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} />
+              <ConnectionBanner status={status} />
+              <Suspense fallback={<div className="flex-1 flex items-center justify-center text-pc-text-muted"><div className="animate-pulse text-sm">Loading…</div></div>}>
+                <Chat messages={messages} isGenerating={isGenerating} isLoadingHistory={isLoadingHistory} status={status} sessionKey={activeSession} onSend={sendMessage} onNewSession={createNewSession} onAbort={abort} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} />
+              </Suspense>
+            </>
+          )}
         </main>
         {/* Split divider + secondary pane */}
         {splitSession && (
@@ -272,6 +292,13 @@ export default function App() {
           approval={currentApproval}
           queueSize={pendingApprovals.length}
           onResolve={resolveApproval}
+        />
+      )}
+      {viewingSubagent && (
+        <SubagentTranscriptModal
+          subagent={viewingSubagent}
+          loadMessages={loadSubagentMessages}
+          onClose={() => setViewingSubagent(null)}
         />
       )}
     </div>

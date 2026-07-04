@@ -1,6 +1,10 @@
 /**
- * Re-export HermesGatewayClient as GatewayClient for upstream compatibility.
- * All upstream code imports from './gateway' — this shim keeps those imports working.
+ * Re-export KinGatewayClient as GatewayClient.
+ * Upstream PinchChat imports `GatewayClient` from './gateway'; this shim keeps
+ * those imports working while pointing them at our Kin adapter.
+ *
+ * The HermesGatewayClient is also still re-exported from ./hermesGateway for
+ * any code that wants to talk to a Hermes backend specifically.
  */
-export { HermesGatewayClient as GatewayClient, type JsonPayload, type GatewayStatus } from './hermesGateway';
-export type { GatewayStatus as GatewayStatusType } from './hermesGateway';
+export { KinGatewayClient as GatewayClient, type JsonPayload, type GatewayStatus } from './kinGateway';
+export type { GatewayStatus as GatewayStatusType } from './kinGateway';

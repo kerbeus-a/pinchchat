@@ -24,6 +24,7 @@ function swVersionPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: '/kinchat/',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },

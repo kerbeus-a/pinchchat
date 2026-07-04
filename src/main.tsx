@@ -8,7 +8,7 @@ import './index.css'
 // Register service worker for PWA support (offline caching, installability)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then((reg) => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((reg) => {
       // Check for updates periodically (every 30 min)
       setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
 

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useState, useRef, useEffect, forwardRef } from 'react';
-import { Menu, Sparkles, LogOut, Cpu, Bot, Download, Minimize2, Info, Copy, Check, Settings } from 'lucide-react';
+import { Menu, Sparkles, LogOut, Cpu, Bot, Download, Minimize2, Info, Copy, Check, Settings, Layers } from 'lucide-react';
 import type { ConnectionStatus, Session, ChatMessage } from '../types';
 import { useT } from '../hooks/useLocale';
 const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -96,6 +96,15 @@ export function Header({ status, sessionKey, onToggleSidebar, activeSessionData,
             <Download size={16} />
           </button>
         )}
+        <a
+          href="#swarm"
+          aria-label="Swarm Runner"
+          className="p-2 rounded-2xl hover:bg-[var(--pc-hover)] text-pc-text-muted hover:text-pc-text transition-colors"
+          title="Swarm Runner"
+          onClick={(e) => { e.preventDefault(); window.location.hash = window.location.hash === '#swarm' ? '' : '#swarm'; }}
+        >
+          <Layers size={16} />
+        </a>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label={t('settings.title')}

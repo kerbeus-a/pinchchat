@@ -77,7 +77,11 @@ export function ExecApprovalModal({ approval, queueSize, onResolve }: Props) {
       aria-modal="true"
       aria-label={t('approval.title')}
       aria-describedby="approval-command"
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      // z-[110] sits above SubagentTranscriptModal (z-[100]) so a pending
+      // exec-approval can never get visually occluded — admins must always
+      // see and resolve the approval, even if they were browsing transcripts.
+      // [Audit transcript-modal / L1]
+      className="fixed inset-0 z-[110] flex items-center justify-center"
     >
       {/* Backdrop — not clickable to dismiss */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />

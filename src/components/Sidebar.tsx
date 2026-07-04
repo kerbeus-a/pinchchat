@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown } from 'lucide-react';
-import type { Session } from '../types';
+import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import type { Session, SubagentSummary } from '../types';
 import { useT } from '../hooks/useLocale';
 import { SessionIcon } from './SessionIcon';
 import { sessionDisplayName, extractAgentIdFromKey } from '../lib/sessionName';
@@ -16,6 +16,8 @@ import {
   getSavedOrder, saveOrder,
 } from '../lib/sidebarStorage';
 import { copyToClipboard } from '../lib/clipboard';
+import { SessionRecall } from './SessionRecall';
+import { SessionPreview } from './SessionPreview';
 
 function VersionBadge() {
   const update = useUpdateCheck(__APP_VERSION__);
@@ -67,6 +69,74 @@ function SidebarFooter() {
         <Globe size={11} />
       </a>
       <VersionBadge />
+    </div>
+  );
+}
+
+/**
+ * Read-only nested list of subagent transcripts under a parent session.
+ * Rendered only when the session is expanded by an admin. Per-row click
+ * is wired to a no-op for now — the transcript-viewer panel is a follow-up.
+ */
+function SubagentList({ sessionKey, subagents, loading, onViewSubagent }: {
+  sessionKey: string;
+  subagents: SubagentSummary[] | undefined;
+  loading: boolean;
+  onViewSubagent?: (sub: SubagentSummary) => void;
+}) {
+  if (loading && !subagents) {
+    return (
+      <div className="ml-7 mt-1 mb-1 flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-pc-text-muted">
+        <Loader2 size={10} className="animate-spin" />
+        <span>Loading subagents…</span>
+      </div>
+    );
+  }
+  if (!subagents || subagents.length === 0) {
+    return (
+      <div className="ml-7 mt-1 mb-1 px-3 py-1 text-[10px] text-pc-text-muted italic">
+        No subagents
+      </div>
+    );
+  }
+  return (
+    <div className="ml-7 mb-1 border-l border-pc-border/40 pl-2">
+      {subagents.map(sub => {
+        const ts = sub.lastActive ?? sub.startedAt;
+        const tsLabel = ts ? new Date(ts).toLocaleString() : '';
+        const title = sub.description ?? sub.id;
+        const subtitle = [sub.agentType, sub.preview].filter(Boolean).join(' — ');
+        const clickable = !!onViewSubagent;
+        return (
+          <button
+            key={`${sessionKey}/${sub.id}`}
+            type="button"
+            onClick={clickable ? () => onViewSubagent!(sub) : undefined}
+            disabled={!clickable}
+            className={`group/sub w-full flex items-start gap-2 px-2 py-1.5 rounded-lg text-pc-text-muted text-[11px] text-left transition-colors ${
+              clickable
+                ? 'hover:bg-[var(--pc-hover)] cursor-pointer'
+                : 'cursor-default'
+            }`}
+            title={`${title}\n${tsLabel}${clickable ? '\n\nClick to view transcript' : ''}`}
+          >
+            <Bot size={10} className="shrink-0 mt-0.5 text-pc-accent-light/50" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-pc-text-secondary">{title}</span>
+                <span className="ml-auto shrink-0 text-[9px] text-pc-text-faint tabular-nums">
+                  {sub.messageCount > 0 ? `${sub.messageCount} msg` : '0'}
+                </span>
+              </div>
+              {subtitle && (
+                <p className="truncate mt-0.5 leading-tight text-[10px] text-pc-text-faint">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -162,9 +232,19 @@ interface Props {
   onNewSession?: () => Promise<void>;
   onNewSessionForAgent?: (agentId: string) => Promise<void>;
   onToast?: (opts: { message: string; type: 'success' | 'warning' }) => void;
+  /**
+   * UX hint from `/api/identity` — toggles visibility of the subagent
+   * expansion chevron. Server still authorises every subagent fetch
+   * independently, so a tampered flag exposes nothing.
+   */
+  isAdmin?: boolean;
+  /** Lazy fetcher for subagent summaries under a parent session. */
+  loadSubagents?: (sessionKey: string) => Promise<SubagentSummary[]>;
+  /** Callback when a subagent row is clicked — caller opens transcript modal. */
+  onViewSubagent?: (sub: SubagentSummary) => void;
 }
 
-export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename, onNewSession, onNewSessionForAgent, onToast }: Props) {
+export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename, onNewSession, onNewSessionForAgent, onToast, isAdmin = false, loadSubagents, onViewSubagent }: Props) {
   const t = useT();
   const [filter, setFilter] = useState('');
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -184,6 +264,62 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
   const [customNames, setCustomNames] = useState<Record<string, string>>(getCustomNames);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+
+  // Subagent expansion state (admin-only). Keyed by session key:
+  //   expandedSubagents = which sessions are expanded
+  //   subagentsByKey    = lazy-loaded cache (undefined = not loaded yet)
+  //   loadingSubagents  = sessions whose fetch is in flight
+  const [expandedPreview, setExpandedPreview] = useState<Set<string>>(new Set());
+  const togglePreview = useCallback((sessionKey: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedPreview((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionKey)) next.delete(sessionKey);
+      else next.add(sessionKey);
+      return next;
+    });
+  }, []);
+  const [expandedSubagents, setExpandedSubagents] = useState<Set<string>>(new Set());
+  const [subagentsByKey, setSubagentsByKey] = useState<Map<string, SubagentSummary[]>>(new Map());
+  const [loadingSubagents, setLoadingSubagents] = useState<Set<string>>(new Set());
+
+  const toggleSubagentExpand = useCallback((sessionKey: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isAdmin || !loadSubagents) return;
+
+    setExpandedSubagents(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionKey)) {
+        next.delete(sessionKey);
+        return next;
+      }
+      next.add(sessionKey);
+      // Trigger a lazy load only on first expand. The cache persists for the
+      // life of the component — if the user wants fresh data, they collapse
+      // and we leave the cache; explicit refresh is out of scope for now.
+      if (!subagentsByKey.has(sessionKey)) {
+        setLoadingSubagents(loading => {
+          const ls = new Set(loading);
+          ls.add(sessionKey);
+          return ls;
+        });
+        void loadSubagents(sessionKey).then(list => {
+          setSubagentsByKey(map => {
+            const m = new Map(map);
+            m.set(sessionKey, list);
+            return m;
+          });
+        }).finally(() => {
+          setLoadingSubagents(loading => {
+            const ls = new Set(loading);
+            ls.delete(sessionKey);
+            return ls;
+          });
+        });
+      }
+      return next;
+    });
+  }, [isAdmin, loadSubagents, subagentsByKey]);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -420,6 +556,14 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
           </div>
         )}
 
+        {/* Natural-language session recall — collapsed by default, expands to a
+            search input that asks local Qwen to find sessions matching a
+            free-text description. Falls back to keyword token matching on the
+            server when the LLM is down. */}
+        <div className="px-2 pt-1">
+          <SessionRecall onPick={(key) => { onSwitch(key); onClose(); }} />
+        </div>
+
         {/* Filter chips */}
         {(availableCategories.length > 1 || availableAgentIds.length >= 2) && (
           <div className="px-2 pt-2 pb-1 flex flex-col gap-2">
@@ -653,8 +797,20 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         <span
                           className="flex-1 truncate"
                           onDoubleClick={(e) => startRename(s.key, customNames[s.key] || sessionDisplayName(s), e)}
-                          title={t('sidebar.rename')}
+                          title={s.channel ? `${s.channel} — ${customNames[s.key] || sessionDisplayName(s)}` : t('sidebar.rename')}
                         >
+                          {/* Tiny channel chip showing where the session lives
+                              (DM / Group / Web / DM topic 14 / Group topic 30).
+                              Kept short and dim so the actual title still wins
+                              attention. Hidden when no channel is set. */}
+                          {s.channel && (
+                            <span
+                              className="mr-1 inline-block align-middle text-[9px] text-pc-text-muted bg-[var(--pc-hover)] border border-pc-border rounded px-1 py-[1px] tracking-tight shrink-0"
+                              aria-label={`channel: ${s.channel}`}
+                            >
+                              {s.channel}
+                            </span>
+                          )}
                           {customNames[s.key] || sessionDisplayName(s)}
                         </span>
                       )}
@@ -662,6 +818,36 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         const rel = relativeTime(s.updatedAt);
                         return rel ? <span className="text-[10px] text-pc-text-muted tabular-nums shrink-0">{rel}</span> : null;
                       })()}
+                      {/* Inline-preview toggle, all members (not admin-gated).
+                          Fetches last 10 turns lazily, renders below row. */}
+                      <button
+                        onClick={(e) => togglePreview(s.key, e)}
+                        className={`shrink-0 p-0.5 rounded-lg transition-all ${
+                          expandedPreview.has(s.key)
+                            ? 'text-pc-accent opacity-90'
+                            : 'text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary'
+                        }`}
+                        title="Preview last messages"
+                        aria-label="Toggle preview"
+                        aria-expanded={expandedPreview.has(s.key)}
+                      >
+                        {expandedPreview.has(s.key) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                      </button>
+                      {isAdmin && loadSubagents && (
+                        <button
+                          onClick={(e) => toggleSubagentExpand(s.key, e)}
+                          className={`shrink-0 p-0.5 rounded-lg transition-all ${
+                            expandedSubagents.has(s.key)
+                              ? 'text-pc-accent opacity-90'
+                              : 'text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary'
+                          }`}
+                          title="Subagents"
+                          aria-label="Toggle subagents"
+                          aria-expanded={expandedSubagents.has(s.key)}
+                        >
+                          {expandedSubagents.has(s.key) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        </button>
+                      )}
                       <button
                         onClick={(e) => startRename(s.key, customNames[s.key] || sessionDisplayName(s), e)}
                         className="shrink-0 p-0.5 rounded-lg transition-all text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary"
@@ -748,6 +934,17 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                     })()}
                   </div>
                 </button>
+                {isAdmin && expandedSubagents.has(s.key) && (
+                  <SubagentList
+                    sessionKey={s.key}
+                    subagents={subagentsByKey.get(s.key)}
+                    loading={loadingSubagents.has(s.key)}
+                    onViewSubagent={onViewSubagent}
+                  />
+                )}
+                {/* Inline preview of the last 10 turns. Available to every
+                    member (not admin-gated). Lazy-loaded on expand. */}
+                <SessionPreview sessionKey={s.key} open={expandedPreview.has(s.key)} />
               </div>
             );
           })}

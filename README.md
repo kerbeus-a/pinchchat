@@ -1,24 +1,12 @@
-<p align="center">
-  <img src="public/logo.png" alt="PinchChat" width="120" />
-</p>
+# KinChat
 
-<h1 align="center">PinchChat</h1>
+> Webchat UI for **Kin**: sessions, streaming, and tool-call visibility for your personas (Kerbeus, Beatrice, BeeQueen).
+>
+> **Forked from [PinchChat](https://github.com/MarlBurroW/pinchchat) by Nicolas Varrot (MIT). All upstream attribution preserved.**
+>
+> The Hermes adapter from the upstream fork is replaced with `kinGateway.ts` to talk to Kin's server adapter.
 
-[![CI](https://github.com/MarlBurroW/pinchchat/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/pinchchat/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/MarlBurroW/pinchchat?color=cyan)](https://github.com/MarlBurroW/pinchchat/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen-brightgreen)](https://nodejs.org/)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/MarlBurroW/pinchchat/pkgs/container/pinchchat)
-[![GitHub Stars](https://img.shields.io/github/stars/MarlBurroW/pinchchat?style=social)](https://github.com/MarlBurroW/pinchchat)
-[![Website](https://img.shields.io/badge/website-GitHub%20Pages-blueviolet)](https://marlburrow.github.io/pinchchat/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
-
-**A sleek, dark-themed webchat UI for [OpenClaw](https://github.com/openclaw/openclaw) — monitor sessions, stream responses, and inspect tool calls in real-time.**
-
-
-<p align="center">
-  <img src="docs/demo.gif" alt="PinchChat Demo" width="800" />
-</p>
+---
 
 ## ✨ Features
 

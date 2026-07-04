@@ -51,6 +51,28 @@ export interface AgentIdentity {
   emoji?: string;
   avatar?: string;
   agentId?: string;
+  /**
+   * Whether the authenticated member has the admin flag (server-side
+   * `members.is_admin === 1`). Surfaced purely as a UX hint — the server
+   * still re-checks on every privileged endpoint hit. Hides admin-only UI
+   * (e.g. subagent transcripts) for non-admin members.
+   */
+  isAdmin?: boolean;
+}
+
+/**
+ * Per-subagent summary returned by `subagents.list`. These render as nested
+ * rows under their parent session in the sidebar, admin-only.
+ */
+export interface SubagentSummary {
+  id: string;
+  parentSessionKey: string;
+  agentType: string | null;
+  description: string | null;
+  startedAt: number | null;
+  lastActive: number | null;
+  messageCount: number;
+  preview: string | null;
 }
 
 export interface ExecApproval {

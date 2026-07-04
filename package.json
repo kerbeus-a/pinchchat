@@ -1,30 +1,20 @@
 {
-  "name": "pinchchat",
-  "version": "1.71.3",
-  "description": "A sleek, dark-themed webchat UI for OpenClaw — monitor sessions, stream responses, and inspect tool calls in real-time.",
+  "name": "kinchat",
+  "version": "1.71.3-kin.1",
+  "description": "Webchat UI for Kin: sessions, streaming, tool-call visibility for personas (Kerbeus, Beatrice, BeeQueen).",
   "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/MarlBurroW/pinchchat.git"
-  },
   "license": "MIT",
-  "author": "Nicolas Varrot",
-  "homepage": "https://marlburrow.github.io/pinchchat/",
-  "bugs": {
-    "url": "https://github.com/MarlBurroW/pinchchat/issues"
-  },
+  "author": "Yuri Tarasov",
   "keywords": [
-    "openclaw",
+    "kin",
     "webchat",
     "chat-ui",
     "ai-agent",
-    "llm",
-    "tool-calls",
-    "dark-theme",
+    "persona",
     "react",
     "vite",
     "streaming",
-    "websocket"
+    "sse"
   ],
   "scripts": {
     "dev": "vite",
@@ -70,5 +60,11 @@
   },
   "engines": {
     "node": ">=20.19"
-  }
+  },
+  "contributors": [
+    {
+      "name": "Nicolas Varrot",
+      "role": "Original PinchChat author (MIT-licensed upstream)"
+    }
+  ]
 }
