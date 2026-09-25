@@ -41,6 +41,22 @@ export interface SourceConnection {
   };
 }
 
+export interface EvidenceReference {
+  answerMessageId: string;
+  citationLabel: string;
+  connectorStatus: 'complete' | 'partial' | 'failed';
+  id: string;
+  workspaceId: Exclude<WorkspaceId, 'everything'>;
+  sourceId: string;
+  sourceType: 'email' | 'attachment' | 'document' | 'odoo_record' | 'transaction';
+  externalId: string;
+  title: string;
+  occurredAt: string | null;
+  excerpt: string | null;
+  deepLink: string | null;
+  capturedAt: string;
+}
+
 export type CommandCenterSend = (method: string, params: JsonPayload) => Promise<JsonPayload>;
 
 export const DEFAULT_WORKSPACE_SCOPE: WorkspaceSessionScope = {
@@ -68,6 +84,16 @@ function isCapability(value: unknown): value is ConnectorCapability {
 
 function isHealth(value: unknown): value is ConnectorHealthStatus {
   return typeof value === 'string' && (CONNECTOR_HEALTH as readonly string[]).includes(value);
+}
+
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseWorkspaces(value: unknown): WorkspaceDefinition[] {
@@ -115,6 +141,36 @@ export function parseSourceConnections(value: unknown): SourceConnection[] {
         lastCheckedAt: typeof item.health.lastCheckedAt === 'string' ? item.health.lastCheckedAt : null,
         lastSuccessAt: typeof item.health.lastSuccessAt === 'string' ? item.health.lastSuccessAt : null,
       },
+    }];
+  });
+}
+
+export function parseEvidenceReferences(value: unknown): EvidenceReference[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.answerMessageId !== 'string'
+      || typeof item.citationLabel !== 'string' || typeof item.id !== 'string'
+      || !isWorkspaceId(item.workspaceId) || item.workspaceId === 'everything'
+      || typeof item.sourceId !== 'string' || typeof item.sourceType !== 'string'
+      || !['email', 'attachment', 'document', 'odoo_record', 'transaction'].includes(item.sourceType)
+      || typeof item.externalId !== 'string' || typeof item.title !== 'string'
+      || !['complete', 'partial', 'failed'].includes(String(item.connectorStatus))
+      || typeof item.capturedAt !== 'string') return [];
+    const locator = isRecord(item.locator) ? item.locator : {};
+    return [{
+      answerMessageId: item.answerMessageId,
+      citationLabel: item.citationLabel,
+      connectorStatus: item.connectorStatus as EvidenceReference['connectorStatus'],
+      id: item.id,
+      workspaceId: item.workspaceId,
+      sourceId: item.sourceId,
+      sourceType: item.sourceType as EvidenceReference['sourceType'],
+      externalId: item.externalId,
+      title: item.title,
+      occurredAt: typeof item.occurredAt === 'string' ? item.occurredAt : null,
+      excerpt: typeof item.excerpt === 'string' ? item.excerpt : null,
+      deepLink: safeHttpUrl(locator.deepLink),
+      capturedAt: item.capturedAt,
     }];
   });
 }

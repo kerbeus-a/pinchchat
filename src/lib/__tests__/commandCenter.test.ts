@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_WORKSPACE_SCOPE, parseSourceConnections, parseWorkspaceScope, parseWorkspaces, sourceHealthSummary } from '../commandCenter';
+import { DEFAULT_WORKSPACE_SCOPE, parseEvidenceReferences, parseSourceConnections, parseWorkspaceScope, parseWorkspaces, sourceHealthSummary } from '../commandCenter';
 
 describe('command center contracts', () => {
   it('parses valid workspace and scope payloads', () => {
@@ -35,5 +35,21 @@ describe('command center contracts', () => {
 
     expect(sources[0]?.capabilities).toEqual(['search', 'get', 'execute']);
     expect(sourceHealthSummary(sources)).toEqual({ label: '1 degraded', status: 'degraded' });
+  });
+
+  it('parses evidence while refusing executable deep links', () => {
+    const base = {
+      answerMessageId: '9', citationLabel: '1', connectorStatus: 'complete', id: 'ref-1',
+      workspaceId: 'tasterra', sourceId: 'odoo-tasterra', sourceType: 'odoo_record',
+      externalId: 'vendor_bill:41', title: 'BILL/2026/0041', occurredAt: '2026-09-20',
+      excerpt: 'Ivan Mining | not_paid', capturedAt: '2026-09-25T00:00:00Z',
+    };
+    expect(parseEvidenceReferences([
+      { ...base, locator: { deepLink: 'https://odoo.example.test/web#id=41' } },
+      { ...base, id: 'ref-2', locator: { deepLink: 'javascript:alert(1)' } },
+    ])).toEqual([
+      expect.objectContaining({ id: 'ref-1', deepLink: 'https://odoo.example.test/web#id=41' }),
+      expect.objectContaining({ id: 'ref-2', deepLink: null }),
+    ]);
   });
 });

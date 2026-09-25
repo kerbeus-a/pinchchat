@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_WORKSPACE_SCOPE,
+  parseEvidenceReferences,
   parseSourceConnections,
   parseWorkspaces,
   parseWorkspaceScope,
   sourceHealthSummary,
   type CommandCenterSend,
+  type EvidenceReference,
   type InteractionMode,
   type SourceConnection,
   type WorkspaceDefinition,
@@ -17,7 +19,10 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
   const [workspaces, setWorkspaces] = useState<WorkspaceDefinition[]>([]);
   const [scope, setScope] = useState<WorkspaceSessionScope>({ ...DEFAULT_WORKSPACE_SCOPE });
   const [sources, setSources] = useState<SourceConnection[]>([]);
+  const [evidence, setEvidence] = useState<EvidenceReference[]>([]);
+  const [evidenceContext, setEvidenceContext] = useState('');
   const [loading, setLoading] = useState(true);
+  const [evidenceLoading, setEvidenceLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,13 +33,25 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     return next;
   }, [send]);
 
+  const loadEvidence = useCallback(async (workspaceId: WorkspaceId) => {
+    const response = await send('evidence.list', { sessionKey, workspaceId });
+    const next = parseEvidenceReferences(response.evidence);
+    setEvidence(next);
+    setEvidenceContext(`${sessionKey}:${workspaceId}`);
+    return next;
+  }, [send, sessionKey]);
+
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
+      setEvidenceLoading(false);
+      setEvidence([]);
+      setEvidenceContext('');
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setEvidenceLoading(true);
     setError(null);
     void Promise.all([
       send('workspaces.list', {}),
@@ -44,12 +61,22 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
       const nextScope = parseWorkspaceScope(scopeResponse.scope);
       setWorkspaces(parseWorkspaces(workspaceResponse.workspaces));
       setScope(nextScope);
-      const sourceResponse = await send('sources.list', { workspaceId: nextScope.workspaceId });
-      if (!cancelled) setSources(parseSourceConnections(sourceResponse.sources));
+      const [sourceResponse, evidenceResponse] = await Promise.all([
+        send('sources.list', { workspaceId: nextScope.workspaceId }),
+        send('evidence.list', { sessionKey, workspaceId: nextScope.workspaceId }),
+      ]);
+      if (!cancelled) {
+        setSources(parseSourceConnections(sourceResponse.sources));
+          setEvidence(parseEvidenceReferences(evidenceResponse.evidence));
+          setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
+      }
     }).catch((cause: unknown) => {
       if (!cancelled) setError(cause instanceof Error ? cause.message : 'Command center unavailable');
     }).finally(() => {
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setEvidenceLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, [enabled, send, sessionKey]);
@@ -72,9 +99,11 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
       setScope(persisted);
       if (persisted.workspaceId !== scope.workspaceId) {
         try {
-          await loadSources(persisted.workspaceId);
+          await Promise.all([loadSources(persisted.workspaceId), loadEvidence(persisted.workspaceId)]);
         } catch {
           setSources([]);
+          setEvidence([]);
+          setEvidenceContext('');
           setError('Scope saved, but source health is unavailable');
         }
       }
@@ -85,9 +114,10 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     } finally {
       setSaving(false);
     }
-  }, [loadSources, scope, send, sessionKey]);
+  }, [loadEvidence, loadSources, scope, send, sessionKey]);
 
   const health = useMemo(() => sourceHealthSummary(sources), [sources]);
+  const visibleEvidence = evidenceContext === `${sessionKey}:${scope.workspaceId}` ? evidence : [];
 
   const refreshSources = useCallback(async () => {
     setLoading(true);
@@ -101,5 +131,19 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     }
   }, [loadSources, scope.workspaceId]);
 
-  return { workspaces, scope, sources, health, loading, saving, error, updateScope, refreshSources };
+  const refreshEvidence = useCallback(async () => {
+    setEvidenceLoading(true);
+    try {
+      await loadEvidence(scope.workspaceId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load evidence');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }, [loadEvidence, scope.workspaceId]);
+
+  return {
+    workspaces, scope, sources, evidence: visibleEvidence, health, loading, evidenceLoading, saving, error,
+    updateScope, refreshSources, refreshEvidence,
+  };
 }

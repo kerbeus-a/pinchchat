@@ -348,6 +348,18 @@ export class KinGatewayClient {
         return await res.json() as JsonPayload;
       }
 
+      case 'evidence.list': {
+        const sessionKey = params.sessionKey as string;
+        const workspaceId = params.workspaceId as string;
+        const res = await fetch(
+          `${url}/api/sessions/${encodeURIComponent(sessionKey)}/evidence?workspace=${encodeURIComponent(workspaceId)}`,
+          { headers: this.authHeaders() },
+        );
+        if (res.status === 401 || res.status === 403) throw new AuthError(`evidence.list: ${res.status}`);
+        if (!res.ok) throw new Error(`evidence.list: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
       case 'sessions.delete': {
         const key = params.key as string;
         await fetch(`${url}/api/sessions/${encodeURIComponent(key)}?agent=${agent}`, { method: 'DELETE', headers: this.authHeaders() });

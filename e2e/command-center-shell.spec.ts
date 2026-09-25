@@ -58,6 +58,15 @@ async function mockCommandCenter(page: Page) {
       }
       return json(route, { scope: scopes.get(sessionId) ?? defaultScope });
     }
+    if (/^\/api\/sessions\/[^/]+\/evidence$/.test(path)) {
+      return json(route, { evidence: [{
+        answerMessageId: '9', citationLabel: '1', connectorStatus: 'complete', id: 'ref-1',
+        workspaceId: 'tasterra', sourceId: 'odoo-tasterra', sourceType: 'odoo_record',
+        externalId: 'vendor_bill:41', title: 'BILL/2026/0041', occurredAt: '2026-09-20',
+        excerpt: 'Ivan Mining | not_paid | 1200 | USD', capturedAt: '2026-09-25T00:00:00Z',
+        locator: { deepLink: 'https://odoo.example.test/web#id=41' },
+      }] });
+    }
     if (path === '/api/sources') {
       return json(route, { sources: url.searchParams.get('workspace') === 'tasterra' ? sources : [] });
     }
@@ -76,6 +85,7 @@ test('desktop command center exposes scope, navigation, sources, and evidence', 
   await expect(page.getByRole('button', { name: 'query' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('2 healthy')).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Evidence panel' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Evidence panel' }).getByText('BILL/2026/0041')).toBeVisible();
 
   await page.getByRole('button', { name: 'Sources' }).first().click();
   await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();

@@ -9,7 +9,7 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { CodeBlock } from './CodeBlock';
 import { ToolCall } from './ToolCall';
 import { ImageBlock } from './ImageBlock';
-import { buildImageSrc } from '../lib/image';
+import { buildImageSrc, safeMarkdownImageSrc } from '../lib/image';
 import { copyToClipboard } from '../lib/clipboard';
 import { Bot, User, Wrench, Copy, Check, CheckCheck, RefreshCw, Zap, Info, Webhook, Braces, Clock, AlertCircle, Bookmark, ChevronDown, Reply } from 'lucide-react';
 import { t, getLocale } from '../lib/i18n';
@@ -86,7 +86,9 @@ function getInternalBlocks(blocks: MessageBlock[]): MessageBlock[] {
 }
 
 function MarkdownImage(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  return <ImageBlock src={props.src || ''} alt={props.alt} />;
+  const src = safeMarkdownImageSrc(props.src || '', window.location.origin);
+  if (!src) return props.alt ? <span>{props.alt}</span> : null;
+  return <ImageBlock src={src} alt={props.alt} />;
 }
 
 function MarkdownLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {

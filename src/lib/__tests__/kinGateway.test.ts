@@ -176,7 +176,8 @@ describe('KinGatewayClient — command center', () => {
       .mockResolvedValueOnce(jsonResponse({ workspaces: [] }))
       .mockResolvedValueOnce(jsonResponse({ scope: { workspaceId: 'tasterra', mode: 'query', sourceIds: [] } }))
       .mockResolvedValueOnce(jsonResponse({ scope: { workspaceId: 'home', mode: 'action', sourceIds: ['mail-home'] } }))
-      .mockResolvedValueOnce(jsonResponse({ sources: [] }));
+      .mockResolvedValueOnce(jsonResponse({ sources: [] }))
+      .mockResolvedValueOnce(jsonResponse({ evidence: [] }));
 
     await client.send('workspaces.list', {});
     await client.send('session.scope.get', { sessionKey: 'session/with spaces' });
@@ -187,6 +188,7 @@ describe('KinGatewayClient — command center', () => {
       sourceIds: ['mail-home'],
     });
     await client.send('sources.list', { workspaceId: 'other-company' });
+    await client.send('evidence.list', { sessionKey: 'session/with spaces', workspaceId: 'tasterra' });
 
     expect(fetchSpy.mock.calls[0]?.[0]).toBe('http://localhost/kinchat/v1/api/workspaces');
     expect(fetchSpy.mock.calls[1]?.[0]).toBe('http://localhost/kinchat/v1/api/sessions/session%2Fwith%20spaces/scope');
@@ -199,6 +201,7 @@ describe('KinGatewayClient — command center', () => {
       source_ids: ['mail-home'],
     });
     expect(fetchSpy.mock.calls[3]?.[0]).toBe('http://localhost/kinchat/v1/api/sources?workspace=other-company');
+    expect(fetchSpy.mock.calls[4]?.[0]).toBe('http://localhost/kinchat/v1/api/sessions/session%2Fwith%20spaces/evidence?workspace=tasterra');
   });
 });
 

@@ -127,7 +127,14 @@ export default function App() {
   const [commandView, setCommandView] = useState<CommandView>(() => commandViewFromHash(window.location.hash));
   const [evidenceOpen, setEvidenceOpen] = useState(() => window.innerWidth >= 1280);
   const commandCenter = useCommandCenter(send, activeSession, authenticated === true);
+  const wasGeneratingRef = useRef(isGenerating);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
+
+  useEffect(() => {
+    const finished = wasGeneratingRef.current && !isGenerating;
+    wasGeneratingRef.current = isGenerating;
+    if (finished) void commandCenter.refreshEvidence();
+  }, [commandCenter.refreshEvidence, isGenerating]);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,7 +351,15 @@ export default function App() {
           </>
         )}
         </div>
-        <EvidencePanel open={evidenceOpen} scope={commandCenter.scope} workspaceLabel={workspaceLabel} onClose={() => setEvidenceOpen(false)} />
+        <EvidencePanel
+          open={evidenceOpen}
+          scope={commandCenter.scope}
+          workspaceLabel={workspaceLabel}
+          evidence={commandCenter.evidence}
+          loading={commandCenter.evidenceLoading}
+          onRefresh={() => { void commandCenter.refreshEvidence(); }}
+          onClose={() => setEvidenceOpen(false)}
+        />
       </div>
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       {currentApproval && (
