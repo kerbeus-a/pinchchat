@@ -187,6 +187,8 @@ export function useGateway() {
         const mapped = filteredSessionList.filter((s) => !deleted.has((s.key || s.sessionKey) as string)).map((s) => ({
           key: (s.key || s.sessionKey) as string,
           label: (s.label || s.key || s.sessionKey) as string,
+          topicName: s.topicName as string | undefined,
+          archived: s.archived === true,
           messageCount: s.messageCount as number | undefined,
           totalTokens: s.totalTokens as number | undefined,
           contextTokens: s.contextTokens as number | undefined,

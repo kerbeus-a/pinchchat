@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 // matchMedia polyfill — Sidebar module reads it at module scope (PWA install hook).
 Object.defineProperty(window, 'matchMedia', {
@@ -200,5 +200,38 @@ describe('Sidebar channel chip', () => {
 
     expect(screen.getByTestId('session-title-topic-session').textContent).toBe('TasTerra Sales');
     expect(screen.queryByLabelText('sidebar.rename')).toBeNull();
+  });
+
+  it('keeps older topic sessions out of the main list and available in Archive', () => {
+    render(
+      <Sidebar
+        {...baseProps()}
+        sessions={[
+          {
+            key: 'current-topic-session',
+            label: 'TasTerra Sales',
+            topicName: 'TasTerra Sales',
+            channel: 'Group topic 27',
+            updatedAt: Date.now(),
+          },
+          {
+            key: 'old-topic-session',
+            label: 'TasTerra Sales',
+            topicName: 'TasTerra Sales',
+            channel: 'Group topic 27',
+            archived: true,
+            updatedAt: Date.now() - 1000,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('session-title-current-topic-session')).toBeDefined();
+    expect(screen.queryByTestId('session-title-old-topic-session')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+
+    expect(screen.queryByTestId('session-title-current-topic-session')).toBeNull();
+    expect(screen.getByTestId('session-title-old-topic-session').textContent).toBe('TasTerra Sales');
   });
 });

@@ -39,6 +39,8 @@ export interface Session {
   label?: string;
   /** Authoritative Telegram topic title; local session aliases do not override it. */
   topicName?: string;
+  /** True when a newer Kin session exists for the same Telegram topic. */
+  archived?: boolean;
   messageCount?: number;
   isActive?: boolean;
   hasUnread?: boolean;

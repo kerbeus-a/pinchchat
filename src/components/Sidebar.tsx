@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, Archive, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import type { Session, SubagentSummary } from '../types';
 import { useT } from '../hooks/useLocale';
 import { SessionIcon } from './SessionIcon';
@@ -444,7 +444,12 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
     setFocusIdx(-1);
   }, []);
 
-  const availableCategories = useMemo(() => getAvailableCategories(sessions), [sessions]);
+  const availableCategories = useMemo(
+    () => getAvailableCategories(sessions.filter(session => !session.archived)),
+    [sessions],
+  );
+  const hasArchivedSessions = useMemo(() => sessions.some(session => session.archived), [sessions]);
+  const showSessionFilters = availableCategories.length > 1 || hasArchivedSessions;
 
   const availableAgentIds = useMemo(() => {
     const ids = new Set<string>();
@@ -479,11 +484,17 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
 
   const filtered = useMemo(() => {
     let list = sessions;
-    // Apply channel filter
-    if (channelFilter === 'active') {
-      list = list.filter(s => s.isActive);
-    } else if (channelFilter) {
-      list = list.filter(s => sessionCategory(s) === channelFilter);
+    // Archive is a separate view. Every other filter works only on current
+    // sessions, so older runner sessions cannot clutter the main list.
+    if (channelFilter === 'archive') {
+      list = list.filter(s => s.archived);
+    } else {
+      list = list.filter(s => !s.archived);
+      if (channelFilter === 'active') {
+        list = list.filter(s => s.isActive);
+      } else if (channelFilter) {
+        list = list.filter(s => sessionCategory(s) === channelFilter);
+      }
     }
     if (agentFilter) {
       list = list.filter(s => {
@@ -577,9 +588,9 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
         </div>
 
         {/* Filter chips */}
-        {(availableCategories.length > 1 || availableAgentIds.length >= 2) && (
+        {(showSessionFilters || availableAgentIds.length >= 2) && (
           <div className="px-2 pt-2 pb-1 flex flex-col gap-2">
-            {availableCategories.length > 1 && (
+            {showSessionFilters && (
               <div className="flex flex-wrap gap-1">
                 <button
                   onClick={() => { setChannelFilter(null); try { localStorage.removeItem(FILTER_KEY); } catch { /* noop */ } }}
@@ -606,7 +617,22 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                   <Zap size={10} />
                   {t('sidebar.filterActive')}
                 </button>
-                {availableCategories.map(cat => (
+                {hasArchivedSessions && (
+                  <button
+                    onClick={() => toggleChannelFilter('archive')}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
+                      channelFilter === 'archive'
+                        ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
+                        : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
+                    }`}
+                    aria-label="Archive"
+                    aria-pressed={channelFilter === 'archive'}
+                  >
+                    <Archive size={10} />
+                    Archive
+                  </button>
+                )}
+                {availableCategories.length > 1 && availableCategories.map(cat => (
                   <button
                     key={cat}
                     onClick={() => toggleChannelFilter(cat)}
@@ -625,7 +651,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
               </div>
             )}
 
-            {availableCategories.length > 1 && availableAgentIds.length >= 2 && (
+            {showSessionFilters && availableAgentIds.length >= 2 && (
               <div className="h-px bg-pc-border/50" />
             )}
 
