@@ -57,7 +57,7 @@ function baseProps() {
 }
 
 describe('Sidebar channel chip', () => {
-  it('renders the chip when session.channel is set', () => {
+  it('does not render a numbered channel chip for a Telegram topic', () => {
     render(
       <Sidebar
         {...baseProps()}
@@ -66,7 +66,7 @@ describe('Sidebar channel chip', () => {
         ]}
       />,
     );
-    expect(screen.getByLabelText('channel: Group topic 30')).toBeDefined();
+    expect(screen.queryByLabelText('channel: Group topic 30')).toBeNull();
     expect(screen.getByText(/hello kerbeus/)).toBeDefined();
   });
 
@@ -130,10 +130,10 @@ describe('Sidebar channel chip', () => {
     );
     expect(screen.getByLabelText('channel: DM')).toBeDefined();
     expect(screen.getByLabelText('channel: Group')).toBeDefined();
-    expect(screen.getByLabelText('channel: Group topic 30')).toBeDefined();
+    expect(screen.queryByLabelText('channel: Group topic 30')).toBeNull();
     expect(screen.getByText(/four \(no channel\)/)).toBeDefined();
-    // Only 3 chips total — the 4th session has no chip.
-    expect(screen.queryAllByLabelText(/^channel:/).length).toBe(3);
+    // Topic numbers and sessions without channels do not consume metadata space.
+    expect(screen.queryAllByLabelText(/^channel:/).length).toBe(2);
   });
 
   it('absurdly long channel string is constrained below the title', () => {
@@ -153,6 +153,37 @@ describe('Sidebar channel chip', () => {
     expect(chip.className).toContain('text-[9px]');
   });
 
+  it('shows context usage only when a real token count is available', () => {
+    const { rerender } = render(
+      <Sidebar
+        {...baseProps()}
+        sessions={[{
+          key: 'no-usage',
+          label: 'No usage data',
+          contextTokens: 100_000,
+          updatedAt: Date.now(),
+        }]}
+      />,
+    );
+
+    expect(screen.queryByText('0%')).toBeNull();
+
+    rerender(
+      <Sidebar
+        {...baseProps()}
+        sessions={[{
+          key: 'real-usage',
+          label: 'Real usage data',
+          totalTokens: 25_000,
+          contextTokens: 100_000,
+          updatedAt: Date.now(),
+        }]}
+      />,
+    );
+
+    expect(screen.getByText('25%')).toBeDefined();
+  });
+
   it('keeps the session title separate from row action tools', () => {
     render(
       <Sidebar
@@ -161,7 +192,7 @@ describe('Sidebar channel chip', () => {
           {
             key: 's1',
             label: 'Long customer planning thread that must remain readable',
-            channel: 'Group topic 30',
+            channel: 'Web',
             messageCount: 42,
             updatedAt: Date.now(),
           },
@@ -176,8 +207,8 @@ describe('Sidebar channel chip', () => {
 
     expect(title.textContent).toContain('Long customer planning thread');
     expect(title.className).toContain('font-medium');
-    expect(titleRow.contains(screen.getByLabelText('channel: Group topic 30'))).toBe(false);
-    expect(metaRow.contains(screen.getByLabelText('channel: Group topic 30'))).toBe(true);
+    expect(titleRow.contains(screen.getByLabelText('channel: Web'))).toBe(false);
+    expect(metaRow.contains(screen.getByLabelText('channel: Web'))).toBe(true);
     expect(titleRow.contains(actions)).toBe(false);
     expect(metaRow.contains(actions)).toBe(true);
     expect(actions.className).toContain('ml-auto');
@@ -199,6 +230,7 @@ describe('Sidebar channel chip', () => {
     );
 
     expect(screen.getByTestId('session-title-topic-session').textContent).toBe('TasTerra Sales');
+    expect(screen.queryByLabelText('channel: Group topic 27')).toBeNull();
     expect(screen.queryByLabelText('sidebar.rename')).toBeNull();
   });
 

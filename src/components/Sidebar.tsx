@@ -745,6 +745,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
             const isDropTarget = dropTarget === s.key && dragKey !== s.key;
             const topicName = s.topicName?.trim();
             const displayName = topicName || customNames[s.key] || sessionDisplayName(s);
+            const showChannel = !!s.channel && sessionCategory(s) !== 'telegram-topic';
             return (
               <div key={s.key}>
                 {isFirstUnpinned && (
@@ -846,7 +847,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         data-testid={`session-meta-row-${s.key}`}
                         className="mt-1 flex items-center gap-1.5 min-w-0"
                       >
-                      {s.channel && (
+                      {showChannel && (
                         <span
                           className="inline-block max-w-[96px] truncate align-middle text-[9px] text-pc-text-muted bg-[var(--pc-hover)] border border-pc-border rounded px-1 py-[1px] tracking-tight shrink-0"
                           aria-label={`channel: ${s.channel}`}
@@ -966,8 +967,8 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                       <p className="text-[11px] text-pc-text-muted truncate mt-0.5 leading-tight">{s.lastMessagePreview.replace(/\s+/g, ' ').slice(0, 80)}</p>
                     )}
                     {(() => {
-                      if (!s.contextTokens) return null;
-                      const pct = Math.min(100, ((s.totalTokens || 0) / s.contextTokens) * 100);
+                      if (!s.contextTokens || !s.totalTokens) return null;
+                      const pct = Math.min(100, (s.totalTokens / s.contextTokens) * 100);
                       const barOpacity = Math.max(0.35, Math.min(1, pct / 100));
                       const barStyle = { width: `${pct}%`, backgroundColor: `rgba(var(--pc-accent-rgb), ${barOpacity})` };
                       return (
