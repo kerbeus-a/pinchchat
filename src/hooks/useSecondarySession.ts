@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { GatewayClient, JsonPayload } from '../lib/gateway';
-import type { ChatMessage, MessageBlock } from '../types';
+import type { ChatMessage, MessageBlock, OutgoingAttachment } from '../types';
 import { parseHistoryMessages } from '../lib/historyParser';
 import { extractText, extractThinking } from '../lib/messageExtract';
 import type { ChatPayloadMessage } from '../lib/messageExtract';
@@ -138,15 +138,22 @@ export function useSecondarySession(
     return unsub;
   }, [sessionKey, addEventListener, handleEvent]);
 
-  const sendMessage = useCallback(async (text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => {
+  const sendMessage = useCallback(async (text: string, attachments?: OutgoingAttachment[]) => {
     if (!sessionKeyRef.current) return;
     const msgId = 'user-' + Date.now();
+    const imageBlocks: MessageBlock[] = (attachments ?? [])
+      .filter(a => a.mimeType.startsWith('image/') && a.previewBase64)
+      .map(a => ({ type: 'image' as const, mediaType: a.mimeType, data: a.previewBase64 }));
+    const fileLines = (attachments ?? [])
+      .filter(a => !a.mimeType.startsWith('image/'))
+      .map(a => `[File: ${a.fileName}]`);
+    const displayText = fileLines.length > 0 ? `${text}\n\n${fileLines.join('\n')}` : text;
     const userMsg: ChatMessage = {
       id: msgId,
       role: 'user',
-      content: text,
+      content: displayText,
       timestamp: Date.now(),
-      blocks: [{ type: 'text', text }],
+      blocks: [...imageBlocks, { type: 'text', text: displayText }],
       sendStatus: 'sending',
     };
     setMessages(prev => [...prev, userMsg]);

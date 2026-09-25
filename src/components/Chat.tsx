@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { ChatMessageComponent } from './ChatMessage';
 import { ChatInput, type ComposerInsertRequest } from './ChatInput';
 import { TypingIndicator } from './TypingIndicator';
-import type { ChatMessage, ConnectionStatus } from '../types';
+import type { ChatMessage, ConnectionStatus, OutgoingAttachment } from '../types';
 import { Bot, ArrowDown, Loader2, ChevronsDownUp, ChevronsUpDown, Sparkles, Bookmark } from 'lucide-react';
 import { MessageSearch } from './MessageSearch';
 import { useT } from '../hooks/useLocale';
@@ -16,7 +16,7 @@ interface Props {
   isLoadingHistory: boolean;
   status: ConnectionStatus;
   sessionKey?: string;
-  onSend: (text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => void;
+  onSend: (text: string, attachments?: OutgoingAttachment[]) => void;
   onNewSession?: () => Promise<void>;
   onAbort: () => void;
   agentAvatarUrl?: string;
@@ -192,7 +192,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
   }, [messages, isGenerating, isLoadingHistory, scrollToBottom]);
 
   // Wrap onSend to flag that user initiated a message
-  const handleSend = useCallback((text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => {
+  const handleSend = useCallback((text: string, attachments?: OutgoingAttachment[]) => {
     userSentRef.current = true;
     onSend(text, attachments);
   }, [onSend]);

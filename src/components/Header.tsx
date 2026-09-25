@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useState, useRef, useEffect, forwardRef } from 'react';
-import { Menu, Sparkles, LogOut, Cpu, Bot, Download, Minimize2, Info, Copy, Check, Settings, Layers } from 'lucide-react';
+import { Menu, Sparkles, LogOut, Cpu, Bot, Download, Minimize2, Info, Copy, Check, Settings, Layers, ListChecks } from 'lucide-react';
 import type { ConnectionStatus, Session, ChatMessage } from '../types';
 import { useT } from '../hooks/useLocale';
 const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -19,10 +19,12 @@ interface Props {
   agentAvatarUrl?: string;
   agentName?: string;
   onCompact?: (sessionKey: string) => Promise<boolean>;
+  isAdmin?: boolean;
 }
 
-export function Header({ status, sessionKey, onToggleSidebar, activeSessionData, onLogout, soundEnabled, onToggleSound, messages, agentAvatarUrl, agentName, onCompact }: Props) {
+export function Header({ status, sessionKey, onToggleSidebar, activeSessionData, onLogout, soundEnabled, onToggleSound, messages, agentAvatarUrl, agentName, onCompact, isAdmin = false }: Props) {
   const t = useT();
+  const fallbackAvatarUrl = `${import.meta.env.BASE_URL}logo.png`;
   const sessionLabel = activeSessionData ? sessionDisplayName(activeSessionData) : (sessionKey.split(':').pop() || sessionKey);
   const sessionAgentId = activeSessionData?.agentId || extractAgentIdFromKey(sessionKey);
   const headerAgentName = agentName || (sessionAgentId && formatAgentId(sessionAgentId)) || t('header.title');
@@ -63,22 +65,26 @@ export function Header({ status, sessionKey, onToggleSidebar, activeSessionData,
         <Menu size={20} />
       </button>
       <div className="flex items-center gap-3 flex-1 min-w-0 relative" ref={sessionInfoRef}>
-        <img src={agentAvatarUrl || '/logo.png'} alt="PinchChat" className="h-9 w-9 rounded-2xl object-cover" onError={(e) => { const img = e.target as HTMLImageElement; if (img.src !== window.location.origin + '/logo.png') { img.src = '/logo.png'; } else { img.style.display = 'none'; } }} />
-        <button className="min-w-0 text-left group" onClick={() => setShowSessionInfo(v => !v)} title={t('header.sessionInfo')} aria-label={t('header.sessionInfo')}>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-pc-text text-sm tracking-wide">{headerAgentName}</span>
-            <Sparkles className="h-3.5 w-3.5 text-pc-accent-light/60" />
+        <img src={agentAvatarUrl || fallbackAvatarUrl} alt="PinchChat" className="h-9 w-9 rounded-2xl object-cover" onError={(e) => { const img = e.target as HTMLImageElement; if (img.src !== new URL(fallbackAvatarUrl, window.location.origin).href) { img.src = fallbackAvatarUrl; } else { img.style.display = 'none'; } }} />
+        <button className="min-w-0 flex-1 text-left group" onClick={() => setShowSessionInfo(v => !v)} title={t('header.sessionInfo')} aria-label={t('header.sessionInfo')}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span data-testid="active-session-title" className="min-w-0 truncate font-semibold text-pc-text text-sm tracking-wide">
+              {sessionLabel}
+            </span>
+            <Info className="h-3.5 w-3.5 shrink-0 text-pc-text-faint opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
-          <span className="text-xs text-pc-text-muted truncate flex items-center gap-1.5">
+          <span className="mt-0.5 text-xs text-pc-text-muted truncate flex items-center gap-1.5 min-w-0">
+            <span className="inline-flex items-center gap-1 min-w-0">
+              <Sparkles className="h-3 w-3 shrink-0 text-pc-accent-light/60" />
+              <span className="truncate">{headerAgentName}</span>
+            </span>
             {activeSessionData?.agentId && (
-              <span className="inline-flex items-center gap-0.5 text-pc-accent/70 font-medium">
+              <span className="inline-flex items-center gap-0.5 text-pc-accent/70 font-medium shrink-0">
+                <span className="text-pc-text-faint mx-0.5">·</span>
                 <Bot className="h-3 w-3" />
                 {activeSessionData.agentId}
-                <span className="text-pc-text-faint mx-0.5">·</span>
               </span>
             )}
-            {sessionLabel}
-            <Info className="h-3 w-3 text-pc-text-faint opacity-0 group-hover:opacity-100 transition-opacity" />
           </span>
         </button>
         {showSessionInfo && activeSessionData && (
@@ -105,6 +111,17 @@ export function Header({ status, sessionKey, onToggleSidebar, activeSessionData,
         >
           <Layers size={16} />
         </a>
+        {isAdmin && (
+          <a
+            href="#gm"
+            aria-label="General Manager"
+            className="p-2 rounded-2xl hover:bg-[var(--pc-hover)] text-pc-text-muted hover:text-pc-text transition-colors"
+            title="General Manager"
+            onClick={(e) => { e.preventDefault(); window.location.hash = window.location.hash === '#gm' ? '' : '#gm'; }}
+          >
+            <ListChecks size={16} />
+          </a>
+        )}
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label={t('settings.title')}

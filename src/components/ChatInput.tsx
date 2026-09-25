@@ -5,12 +5,13 @@ import { useSendShortcut } from '../hooks/useSendShortcut';
 import { SlashCommandMenu } from './SlashCommands';
 import { shouldShowSlashMenu } from '../lib/slashUtils';
 import { LazyMarkdown } from './LazyMarkdown';
+import type { OutgoingAttachment } from '../types';
 
 interface FileAttachment {
   id: string;
   file: File;
-  base64: string; // raw base64 (no data: prefix)
   mimeType: string;
+  previewBase64?: string;
   preview?: string; // data url thumbnail for images
 }
 
@@ -24,7 +25,7 @@ export interface ComposerInsertRequest {
 }
 
 interface Props {
-  onSend: (text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => void;
+  onSend: (text: string, attachments?: OutgoingAttachment[]) => void;
   onNewSession?: () => Promise<void>;
   onAbort: () => void;
   isGenerating: boolean;
@@ -37,6 +38,26 @@ interface Props {
 
 const MAX_BASE64_CHARS = 300 * 1024; // ~225KB real, well under 512KB WS limit (JSON overhead + base64 bloat)
 const MAX_IMAGE_PIXELS = 1280; // Max dimension for resize
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const FILE_ACCEPT = [
+  'image/*',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.txt',
+  '.md',
+  '.rtf',
+  '.csv',
+  '.tsv',
+  '.json',
+  '.jsonl',
+  '.yaml',
+  '.yml',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+].join(',');
 
 function compressImage(file: File, maxBase64Chars: number): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
@@ -170,19 +191,25 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
     const newFiles: FileAttachment[] = [];
     for (const file of Array.from(fileList)) {
-      if (file.size > 20 * 1024 * 1024) continue; // 20MB max
-      // Only images are supported — the OpenClaw gateway drops non-image attachments
-      if (!file.type.startsWith('image/')) continue;
-      // Compress images to fit WS payload limit
-      const compressed = await compressImage(file, MAX_BASE64_CHARS);
-      const base64 = compressed.base64;
-      const mimeType = compressed.mimeType;
+      if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) continue;
+      const mimeType = file.type || 'application/octet-stream';
+      let previewBase64: string | undefined;
+      let preview: string | undefined;
+      if (mimeType.startsWith('image/')) {
+        try {
+          const compressed = await compressImage(file, MAX_BASE64_CHARS);
+          previewBase64 = compressed.base64;
+          preview = `data:${compressed.mimeType};base64,${compressed.base64}`;
+        } catch {
+          preview = undefined;
+        }
+      }
       newFiles.push({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         file,
-        base64,
         mimeType,
-        preview: `data:${mimeType};base64,${base64}`,
+        previewBase64,
+        preview,
       });
     }
     setFiles(prev => [...prev, ...newFiles]);
@@ -209,7 +236,8 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
     const attachments = files.length > 0 ? files.map(f => ({
       mimeType: f.mimeType,
       fileName: f.file.name,
-      content: f.base64,
+      file: f.file,
+      previewBase64: f.previewBase64,
     })) : undefined;
     // Prepend quote if replying
     let finalText = trimmed || ' ';
@@ -399,7 +427,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
               multiple
               className="hidden"
               onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
-              accept="image/*"
+              accept={FILE_ACCEPT}
             />
 
             <textarea

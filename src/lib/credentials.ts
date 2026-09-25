@@ -18,7 +18,9 @@ export function getStoredCredentials(): StoredCredentials | null {
   return { url: h.bridgeUrl, token: h.agent, authMode: 'token' };
 }
 
-export function storeCredentials(url: string, token: string, _authMode: AuthMode = 'token', _clientId?: string) {
+export function storeCredentials(url: string, token: string, authMode: AuthMode = 'token', clientId?: string) {
+  void authMode;
+  void clientId;
   storeHermes(url, token);
 }
 

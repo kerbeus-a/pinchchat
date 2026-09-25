@@ -13,7 +13,9 @@ import { KeyboardShortcuts } from './components/KeyboardShortcuts';
 import { Toast } from './components/Toast';
 import { ToolCollapseProvider } from './contexts/ToolCollapseContext';
 import { SwarmView } from './components/SwarmView';
+import { GmCommandCenter } from './components/GmCommandCenter';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from './lib/sessionName';
+import { commandViewFromHash, shouldClearCommandHashForSessionSwitch, shouldReturnToChatOnSessionSwitch, type CommandView } from './lib/commandView';
 import { X } from 'lucide-react';
 import { useT } from './hooks/useLocale';
 import { useSwipeSidebar } from './hooks/useSwipeSidebar';
@@ -37,7 +39,7 @@ export default function App() {
     status, messages, sessions, agents, activeSession, isGenerating, isLoadingHistory,
     sendMessage, abort, switchSession, deleteSession, createNewSession, createSessionForAgent,
     authenticated, login, logout, connectError, isConnecting, agentIdentity,
-    getClient, addEventListener, isSessionsLoaded, loadSubagentsForSession, loadSubagentMessages,
+    getClient, addEventListener, send, isSessionsLoaded, loadSubagentsForSession, loadSubagentMessages,
   } = useGateway();
   const [viewingSubagent, setViewingSubagent] = useState<import('./types').SubagentSummary | null>(null);
   const [splitSession, setSplitSession] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export default function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [showSwarm, setShowSwarm] = useState(() => window.location.hash === '#swarm');
+  const [commandView, setCommandView] = useState<CommandView>(() => commandViewFromHash(window.location.hash));
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
@@ -167,6 +169,15 @@ export default function App() {
     return () => setBaseTitle(undefined);
   }, [activeSession, sessions]);
 
+  const handleSessionSwitch = useCallback((key: string) => {
+    switchSession(key);
+    if (!shouldReturnToChatOnSessionSwitch(commandView, window.location.hash)) return;
+    setCommandView('chat');
+    if (shouldClearCommandHashForSessionSwitch(window.location.hash)) {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }, [commandView, switchSession]);
+
   // Keyboard shortcuts: Escape, ?, Alt+↑/↓ for session navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape' && sidebarOpen) {
@@ -188,18 +199,20 @@ export default function App() {
       const next = e.key === 'ArrowUp'
         ? (idx - 1 + sessions.length) % sessions.length
         : (idx + 1) % sessions.length;
-      switchSession(sessions[next].key);
+      handleSessionSwitch(sessions[next].key);
     }
-  }, [sidebarOpen, shortcutsOpen, sessions, activeSession, switchSession]);
+  }, [sidebarOpen, shortcutsOpen, sessions, activeSession, handleSessionSwitch]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Hash-based routing for swarm view
+  // Hash-based routing for admin command views
   useEffect(() => {
-    const handler = () => setShowSwarm(window.location.hash === '#swarm');
+    const handler = () => {
+      setCommandView(commandViewFromHash(window.location.hash));
+    };
     window.addEventListener('hashchange', handler);
     return () => window.removeEventListener('hashchange', handler);
   }, []);
@@ -226,7 +239,7 @@ export default function App() {
         sessions={sessions}
         agents={agents}
         activeSession={activeSession}
-        onSwitch={switchSession}
+        onSwitch={handleSessionSwitch}
         onDelete={deleteSession}
         onSplit={handleSplit}
         splitSession={splitSession}
@@ -242,12 +255,18 @@ export default function App() {
       />
       <div ref={splitContainerRef} className="flex-1 flex min-w-0" aria-hidden={sidebarOpen ? true : undefined}>
         {/* Primary pane */}
-        <main className="flex flex-col min-w-0" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={showSwarm ? 'Swarm Runner' : t('app.mainChat')}>
-          {showSwarm ? (
+        <main className="flex flex-col min-w-0" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'gm' ? 'General Manager' : t('app.mainChat')}>
+          {commandView === 'swarm' ? (
             <SwarmView />
+          ) : commandView === 'gm' ? (
+            <GmCommandCenter
+              send={send}
+              sourceSessionId={sessions.find((session) => session.key === activeSession)?.channel === 'Web' ? activeSession : undefined}
+              onOpenSourceSession={handleSessionSwitch}
+            />
           ) : (
             <>
-              <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} />
+              <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
               <ConnectionBanner status={status} />
               <Suspense fallback={<div className="flex-1 flex items-center justify-center text-pc-text-muted"><div className="animate-pulse text-sm">Loading…</div></div>}>
                 <Chat messages={messages} isGenerating={isGenerating} isLoadingHistory={isLoadingHistory} status={status} sessionKey={activeSession} onSend={sendMessage} onNewSession={createNewSession} onAbort={abort} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} />

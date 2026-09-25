@@ -42,6 +42,18 @@ describe('KinGatewayClient — connect()', () => {
     expect(connectedStatus).toBe('connected');
   });
 
+  it('connects without Authorization when the LAN gateway provides identity', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ member_id: 'yuri', name: 'Yuri', is_admin: true }));
+    const client = new KinGatewayClient('http://localhost/kinchat/v1');
+
+    await client.connect();
+
+    expect(client.memberId).toBe('yuri');
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(JSON.stringify(init?.headers ?? {})).not.toContain('Authorization');
+  });
+
   it('derives agent per member: artem gets artem', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ member_id: 'artem', name: 'Artem', is_admin: false }));
     const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
@@ -141,7 +153,57 @@ describe('KinGatewayClient — sessions.list', () => {
   });
 });
 
+describe('KinGatewayClient — agents.list', () => {
+  it('returns the connected member without warning about an unsupported method', async () => {
+    const client = new KinGatewayClient('http://localhost/kinchat/v1');
+    await connectClient(client, 'yuri');
+    vi.restoreAllMocks();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await client.send('agents.list', {}) as { agents: Array<Record<string, unknown>> };
+
+    expect(res.agents).toEqual([{ id: 'yuri', agentId: 'yuri' }]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('KinGatewayClient — streaming', () => {
+  it('posts chat attachments as multipart form data', async () => {
+    const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
+    await connectClient(client);
+    vi.restoreAllMocks();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(sseResponse([
+      { type: 'final', content: 'ok' },
+    ]));
+    const file = new File(['%PDF-1.4'], 'first.pdf', { type: 'application/pdf' });
+
+    await client.send('chat.send', {
+      sessionKey: 's1',
+      message: 'compare docs',
+      attachments: [{ file, fileName: 'first.pdf', mimeType: 'application/pdf' }],
+    });
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    });
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe('http://localhost/kinchat/v1/api/chat');
+    const headers = init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer tok');
+    expect(headers['Content-Type']).toBeUndefined();
+    expect(init?.body).toBeInstanceOf(FormData);
+    const body = init!.body as FormData;
+    expect(body.get('agent')).toBe('yuri');
+    expect(body.get('session_id')).toBe('s1');
+    expect(body.get('message')).toBe('compare docs');
+    const files = body.getAll('files');
+    expect(files).toHaveLength(1);
+    expect(files[0]).toBeInstanceOf(File);
+    expect((files[0] as File).name).toBe('first.pdf');
+    expect((files[0] as File).type).toBe('application/pdf');
+    expect((files[0] as File).size).toBe(8);
+  });
+
   it('treats delta content as a full snapshot, not an incremental append', async () => {
     const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
     await connectClient(client);

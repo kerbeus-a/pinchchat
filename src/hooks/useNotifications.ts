@@ -90,7 +90,7 @@ export function useNotifications() {
       try {
         const n = new Notification(title, {
           body: body?.slice(0, 200),
-          icon: '/logo.png',
+          icon: `${import.meta.env.BASE_URL}logo.png`,
           tag: 'pinchchat-message', // Collapse multiple into one
           silent: soundEnabled, // Don't double-play system sound if we have our own
         });

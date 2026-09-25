@@ -27,6 +27,13 @@ export type MessageBlock =
   | { type: 'tool_result'; content: string; toolUseId?: string; name?: string }
   | { type: 'image'; mediaType: string; data?: string; url?: string };
 
+export interface OutgoingAttachment {
+  file: File;
+  fileName: string;
+  mimeType: string;
+  previewBase64?: string;
+}
+
 export interface Session {
   key: string;
   label?: string;

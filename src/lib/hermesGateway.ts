@@ -6,6 +6,16 @@
 export type JsonPayload = Record<string, unknown>;
 export type GatewayStatus = 'disconnected' | 'connecting' | 'connected' | 'pairing';
 
+interface SessionRow {
+  id?: unknown;
+  title?: unknown;
+  preview?: unknown;
+  message_count?: unknown;
+  model?: unknown;
+  last_active?: unknown;
+  started_at?: unknown;
+}
+
 export class HermesGatewayClient {
   private bridgeUrl: string;
   private agent: string;
@@ -63,16 +73,20 @@ export class HermesGatewayClient {
     switch (method) {
       case 'sessions.list': {
         const res = await fetch(`${url}/api/sessions?agent=${agent}&limit=50`);
-        const data = await res.json();
+        const data = await res.json() as { sessions?: SessionRow[] };
         // Map to PinchChat session format
-        const sessions = (data.sessions || []).map((s: any) => ({
-          key: s.id,
-          sessionKey: s.id,
-          label: s.title || s.preview || 'Untitled',
-          messageCount: s.message_count,
-          model: s.model,
-          updatedAt: s.last_active ? s.last_active * 1000 : s.started_at ? s.started_at * 1000 : undefined,
-          lastMessagePreview: s.preview,
+        const sessions = (data.sessions || []).map((s) => ({
+          key: String(s.id ?? ''),
+          sessionKey: String(s.id ?? ''),
+          label: String(s.title || s.preview || 'Untitled'),
+          messageCount: typeof s.message_count === 'number' ? s.message_count : undefined,
+          model: typeof s.model === 'string' ? s.model : undefined,
+          updatedAt: typeof s.last_active === 'number'
+            ? s.last_active * 1000
+            : typeof s.started_at === 'number'
+              ? s.started_at * 1000
+              : undefined,
+          lastMessagePreview: typeof s.preview === 'string' ? s.preview : undefined,
         }));
         return { sessions };
       }
@@ -166,11 +180,15 @@ export class HermesGatewayClient {
           const jsonStr = line.slice(6);
           if (jsonStr === '[DONE]') continue;
 
-          let evt: any;
-          try { evt = JSON.parse(jsonStr); } catch { continue; }
+          let evt: Record<string, unknown>;
+          try {
+            const parsed = JSON.parse(jsonStr) as unknown;
+            if (!parsed || typeof parsed !== 'object') continue;
+            evt = parsed as Record<string, unknown>;
+          } catch { continue; }
 
           if (evt.type === 'delta') {
-            accumulatedContent += evt.content || '';
+            accumulatedContent += String(evt.content || '');
             this.emit('chat', {
               state: 'delta',
               message: { content: [{ type: 'text', text: accumulatedContent }] },
@@ -178,24 +196,32 @@ export class HermesGatewayClient {
               sessionKey,
             });
           } else if (evt.type === 'tool_use') {
+            const input = evt.input && typeof evt.input === 'object'
+              ? evt.input as JsonPayload
+              : {};
             this.emit('agent', {
               stream: 'tool',
-              data: { phase: 'start', name: evt.name, args: evt.input || {}, toolCallId: evt.toolCallId || '' },
+              data: {
+                phase: 'start',
+                name: String(evt.name || ''),
+                args: input,
+                toolCallId: String(evt.toolCallId || ''),
+              },
             });
           } else if (evt.type === 'tool_result') {
             this.emit('agent', {
               stream: 'tool',
-              data: { phase: 'result', result: evt.content || '', toolCallId: evt.toolCallId || '' },
+              data: { phase: 'result', result: String(evt.content || ''), toolCallId: String(evt.toolCallId || '') },
             });
           } else if (evt.type === 'final') {
             this.emit('chat', { state: 'final', sessionKey });
           } else if (evt.type === 'error') {
-            this.emit('chat', { state: 'error', errorMessage: evt.message, sessionKey });
+            this.emit('chat', { state: 'error', errorMessage: String(evt.message || ''), sessionKey });
           }
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
         this.emit('chat', { state: 'aborted', sessionKey });
       } else {
         this.emit('chat', { state: 'error', errorMessage: String(err), sessionKey });

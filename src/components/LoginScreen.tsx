@@ -85,27 +85,32 @@ export function LoginScreen({ onConnect, error, isConnecting }: Props) {
   const [bridgeUrl, setBridgeUrl] = useState(
     hash.bridgeUrl || stored?.bridgeUrl || deriveDefaultBridgeUrl()
   );
-  const [token, setToken] = useState(hash.token || (stored as any)?.token || '');
+  const [token, setToken] = useState(hash.token || stored?.token || '');
 
-  // Auto-submit if token came from the URL hash AND the bridge URL is on
-  // the LAN allowlist OR is same-origin. Strict allowlist closes the
-  // crafted-URL exfiltration path.
+  // Auto-submit if a token came from the URL hash, or if this is the LAN
+  // no-auth first-run path. The bridge URL must still be same-origin or on
+  // the LAN allowlist, so a crafted remote bridge cannot receive traffic
+  // without a manual operator action.
   //
   // `firedRef` guards against React StrictMode dev-mode double-mount
   // calling onConnect twice with stale closure values.
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current) return;
-    if (!hash.token) return;
     if (isConnecting) return;
-    const effectiveBridge = hash.bridgeUrl || deriveDefaultBridgeUrl();
+    const hasHashToken = Boolean(hash.token);
+    const effectiveBridge = hasHashToken
+      ? hash.bridgeUrl || deriveDefaultBridgeUrl()
+      : deriveDefaultBridgeUrl();
+    const shouldAutoConnect = hasHashToken || (!stored?.token && !hash.bridgeUrl);
+    if (!shouldAutoConnect) return;
     if (!isBridgeUrlAutoAllowed(effectiveBridge) && !isSameOrigin(effectiveBridge)) {
       // Pre-fill but don't auto-submit. User must review.
       return;
     }
     firedRef.current = true;
     window.history.replaceState({}, '', window.location.pathname + window.location.search);
-    onConnect(effectiveBridge, hash.token);
+    onConnect(effectiveBridge, hash.token || undefined);
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

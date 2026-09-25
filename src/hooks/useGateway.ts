@@ -6,7 +6,8 @@ import { getCachedMessages, setCachedMessages, mergeWithCache } from '../lib/mes
 import { extractAgentIdFromKey } from '../lib/sessionName';
 import { extractText, extractThinking, type ChatPayloadMessage } from '../lib/messageExtract';
 import { parseHistoryMessages } from '../lib/historyParser';
-import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity } from '../types';
+import { appendBackgroundOutcome } from '../lib/backgroundOutcome';
+import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity, OutgoingAttachment } from '../types';
 
 export function useGateway() {
   const clientRef = useRef<KinGatewayClient | null>(null);
@@ -315,6 +316,15 @@ export function useGateway() {
     });
 
     client.onEvent((event, payload) => {
+      if (event === 'background_message') {
+        const session = payload.sessionKey;
+        if (session === activeSessionRef.current) {
+          setMessages(prev => appendBackgroundOutcome(prev, payload));
+        } else if (typeof session === 'string') {
+          setUnreadSessions(prev => { const next = new Map(prev); next.set(session, (prev.get(session) ?? 0) + 1); return next; });
+        }
+        return;
+      }
       if (event === 'agent') {
         handleAgentEvent(payload);
         return;
@@ -456,17 +466,21 @@ export function useGateway() {
     }
   }, [setupClient]);
 
-  const sendMessage = useCallback(async (text: string, attachments?: Array<{ mimeType: string; fileName: string; content: string }>) => {
+  const sendMessage = useCallback(async (text: string, attachments?: OutgoingAttachment[]) => {
     const msgId = 'user-' + Date.now();
     const imageBlocks: MessageBlock[] = (attachments ?? [])
-      .filter(a => a.mimeType.startsWith('image/'))
-      .map(a => ({ type: 'image' as const, mediaType: a.mimeType, data: a.content }));
+      .filter(a => a.mimeType.startsWith('image/') && a.previewBase64)
+      .map(a => ({ type: 'image' as const, mediaType: a.mimeType, data: a.previewBase64 }));
+    const fileLines = (attachments ?? [])
+      .filter(a => !a.mimeType.startsWith('image/'))
+      .map(a => `[File: ${a.fileName}]`);
+    const displayText = fileLines.length > 0 ? `${text}\n\n${fileLines.join('\n')}` : text;
     const userMsg: ChatMessage = {
       id: msgId,
       role: 'user',
-      content: text,
+      content: displayText,
       timestamp: Date.now(),
-      blocks: [...imageBlocks, { type: 'text', text }],
+      blocks: [...imageBlocks, { type: 'text', text: displayText }],
       sendStatus: 'sending',
     };
     setMessages(prev => [...prev, userMsg]);
@@ -614,6 +628,7 @@ export function useGateway() {
   useEffect(() => {
     if (status !== 'connected') return;
     const sessionsTimer = setInterval(loadSessions, 8000);
+    const outcomesTimer = setInterval(() => { void clientRef.current?.pollBackgroundOutcomes(); }, 3000);
     const messagesTimer = setInterval(() => {
       const key = activeSessionRef.current;
       if (!key) return;
@@ -622,9 +637,36 @@ export function useGateway() {
     }, 5000);
     return () => {
       clearInterval(sessionsTimer);
+      clearInterval(outcomesTimer);
       clearInterval(messagesTimer);
     };
   }, [status, loadSessions, loadHistory, isGenerating]);
+
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const download = (event: MouseEvent) => {
+      const anchor = event.target instanceof Element ? event.target.closest('a') : null;
+      if (!anchor) return;
+      const url = new URL(anchor.href, window.location.href);
+      const id = url.origin === window.location.origin ? url.pathname.match(/^\/gm-artifacts\/([0-9a-f-]{36})$/i)?.[1] : undefined;
+      if (!id) return;
+      event.preventDefault();
+      const client = clientRef.current;
+      void client?.downloadArtifact(id).catch(error => {
+        if (client !== clientRef.current || !client.isConnected) return;
+        const content = error instanceof Error ? error.message : 'Document download failed.';
+        setMessages(prev => {
+          const active = prev.findIndex(message => message.isStreaming);
+          const index = active < 0 ? prev.length : active;
+          const message: ChatMessage = { id: `download-error-${crypto.randomUUID()}`, role: 'assistant',
+            content, timestamp: Date.now(), blocks: [{ type: 'text', text: content }] };
+          return [...prev.slice(0, index), message, ...prev.slice(index)];
+        });
+      });
+    };
+    document.addEventListener('click', download);
+    return () => document.removeEventListener('click', download);
+  }, [status]);
 
   const enrichedSessions = sessions.map(s => ({
     ...s,

@@ -1,0 +1,682 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, CornerUpLeft, Link, ListChecks, MessageSquare, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
+import type { JsonPayload } from '../lib/kinGateway';
+import { relativeTime } from '../lib/relativeTime';
+
+type SendFn = (method: string, params: JsonPayload) => Promise<JsonPayload>;
+
+interface GmMission {
+  id: string;
+  title: string;
+  goal: string;
+  acceptance_criteria: string[];
+  origin: string;
+  source_context?: { kind: 'web_session'; sessionId: string } | { kind: 'telegram_topic'; contextKey: string } | null;
+  status: string;
+  completion_review_status?: 'none' | 'pending' | 'accepted' | 'reopened';
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+}
+
+interface GmTask {
+  id: string;
+  mission_id: string;
+  lineage_id: string;
+  attempt: number;
+  title: string;
+  objective: string;
+  acceptance_criteria: string[];
+  runner: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  execution?: {
+    role: string;
+    risk: string;
+    expectedArtifact: string;
+    policy: {
+      runner: string;
+      model?: string;
+      toolMode: string;
+      writeMode: string;
+    };
+  } | null;
+}
+
+interface GmEvent {
+  id: string;
+  type: string;
+  summary: string;
+  created_at: string;
+}
+
+interface GmTaskTurn {
+  id: string;
+  role: string;
+  kind: string;
+  content: string;
+  created_at: string;
+}
+
+interface GmTimelineItem {
+  id: string;
+  source: 'event' | 'turn';
+  task_id: string | null;
+  type: string;
+  content: string;
+  role?: string;
+  created_at: string;
+}
+
+interface GmDetail {
+  mission: GmMission;
+  tasks: GmTask[];
+  events: GmEvent[];
+  timeline?: GmTimelineItem[];
+}
+
+export function GmCommandCenter({
+  send,
+  sourceSessionId,
+  onOpenSourceSession,
+}: {
+  send: SendFn;
+  sourceSessionId?: string;
+  onOpenSourceSession?: (sessionId: string) => void;
+}) {
+  const [missions, setMissions] = useState<GmMission[]>([]);
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<GmDetail | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [turns, setTurns] = useState<GmTaskTurn[]>([]);
+  const [command, setCommand] = useState('');
+  const [criteria, setCriteria] = useState('');
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskObjective, setTaskObjective] = useState('');
+  const [steering, setSteering] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
+
+  const selectedTask = useMemo(
+    () => detail?.tasks.find((task) => task.id === selectedTaskId) ?? detail?.tasks[0] ?? null,
+    [detail?.tasks, selectedTaskId],
+  );
+
+  const loadMissions = useCallback(async () => {
+    const res = await send('gm.missions.list', {});
+    const list = Array.isArray(res.missions) ? res.missions as unknown as GmMission[] : [];
+    setMissions(list);
+    setSelectedMissionId((current) => {
+      if (current && list.some((mission) => mission.id === current)) return current;
+      return list[0]?.id ?? null;
+    });
+  }, [send]);
+
+  const loadMissionDetail = useCallback(async (missionId: string) => {
+    const res = await send('gm.mission.detail', { missionId });
+    if (res.mission && typeof res.mission === 'object') {
+      setDetail({
+        mission: res.mission as unknown as GmMission,
+        tasks: Array.isArray(res.tasks) ? res.tasks as unknown as GmTask[] : [],
+        events: Array.isArray(res.events) ? res.events as unknown as GmEvent[] : [],
+        timeline: Array.isArray(res.timeline) ? res.timeline as unknown as GmTimelineItem[] : undefined,
+      });
+    }
+  }, [send]);
+
+  const loadTurns = useCallback(async (taskId: string) => {
+    const res = await send('gm.task.turns', { taskId });
+    setTurns(Array.isArray(res.turns) ? res.turns as unknown as GmTaskTurn[] : []);
+  }, [send]);
+
+  useEffect(() => {
+    loadMissions().catch(() => setError('Could not load GM missions'));
+  }, [loadMissions]);
+
+  useEffect(() => {
+    if (!selectedMissionId) {
+      setDetail(null);
+      setSelectedTaskId(null);
+      return;
+    }
+    loadMissionDetail(selectedMissionId).catch(() => setError('Could not load mission'));
+  }, [loadMissionDetail, selectedMissionId]);
+
+  useEffect(() => {
+    const tasks = detail?.tasks ?? [];
+    setSelectedTaskId((current) => {
+      if (current && tasks.some((task) => task.id === current)) return current;
+      return tasks[0]?.id ?? null;
+    });
+  }, [detail]);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setTurns([]);
+      return;
+    }
+    loadTurns(selectedTaskId).catch(() => setError('Could not load task turns'));
+  }, [loadTurns, selectedTaskId]);
+
+  const hasActiveTask = detail?.tasks.some((task) => ['queued', 'running'].includes(task.status)) ?? false;
+  const pollingTaskId = selectedTaskId ?? detail?.tasks[0]?.id ?? null;
+
+  useEffect(() => {
+    if (!selectedMissionId || !hasActiveTask) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          await loadMissionDetail(selectedMissionId);
+          if (pollingTaskId) await loadTurns(pollingTaskId);
+        } catch {
+          setError('Could not refresh active task');
+        }
+      })();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveTask, loadMissionDetail, loadTurns, pollingTaskId, selectedMissionId]);
+
+  const criteriaList = useCallback((raw: string): string[] => {
+    return raw.split('\n').map((line) => line.trim()).filter(Boolean);
+  }, []);
+
+  const runAction = useCallback(async (name: string, fn: () => Promise<void>) => {
+    setWorking(name);
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'GM action failed');
+    } finally {
+      setWorking(null);
+    }
+  }, []);
+
+  const refreshSelected = useCallback(async () => {
+    await loadMissions();
+    if (selectedMissionId) await loadMissionDetail(selectedMissionId);
+    if (selectedTaskId) await loadTurns(selectedTaskId);
+  }, [loadMissions, loadMissionDetail, loadTurns, selectedMissionId, selectedTaskId]);
+
+  const createMission = useCallback(async () => {
+    const trimmed = command.trim();
+    if (!trimmed) return;
+    await runAction('create-mission', async () => {
+      const res = await send('gm.command', {
+        command: trimmed,
+        acceptanceCriteria: criteriaList(criteria),
+        ...(sourceSessionId ? { sourceSessionId } : {}),
+      });
+      const created = res.mission as { id?: string } | undefined;
+      if (created?.id) setSelectedMissionId(created.id);
+      setCommand('');
+      setCriteria('');
+      await loadMissions();
+    });
+  }, [command, criteria, criteriaList, loadMissions, runAction, send, sourceSessionId]);
+
+  const createTask = useCallback(async () => {
+    if (!detail) return;
+    const title = taskTitle.trim();
+    const objective = taskObjective.trim();
+    if (!title || !objective) return;
+    await runAction('create-task', async () => {
+      const res = await send('gm.task.create', {
+        missionId: detail.mission.id,
+        title,
+        objective,
+        acceptanceCriteria: [],
+        role: 'analyst',
+        risk: 'low',
+        expectedArtifact: 'summary',
+      });
+      const task = res.task as { id?: string } | undefined;
+      if (task?.id) setSelectedTaskId(task.id);
+      setTaskTitle('');
+      setTaskObjective('');
+      await loadMissionDetail(detail.mission.id);
+    });
+  }, [detail, loadMissionDetail, runAction, send, taskObjective, taskTitle]);
+
+  const missionAction = useCallback(async (method: string, reason: string) => {
+    if (!detail) return;
+    await runAction(method, async () => {
+      await send(method, { missionId: detail.mission.id, reason });
+      await refreshSelected();
+    });
+  }, [detail, refreshSelected, runAction, send]);
+
+  const taskAction = useCallback(async (method: string, reason: string) => {
+    if (!selectedTask) return;
+    await runAction(method, async () => {
+      const res = await send(method, { taskId: selectedTask.id, reason });
+      const task = res.task as { id?: string } | undefined;
+      if (task?.id) setSelectedTaskId(task.id);
+      await refreshSelected();
+    });
+  }, [refreshSelected, runAction, selectedTask, send]);
+
+  const sendSteering = useCallback(async () => {
+    if (!selectedTask) return;
+    const message = steering.trim();
+    if (!message) return;
+    await runAction('gm.task.message', async () => {
+      await send('gm.task.message', { taskId: selectedTask.id, message });
+      setSteering('');
+      await loadTurns(selectedTask.id);
+    });
+  }, [loadTurns, runAction, selectedTask, send, steering]);
+
+  const mission = detail?.mission ?? null;
+  const sourceContext = mission?.source_context ?? null;
+  const timeline: GmTimelineItem[] = detail?.timeline ?? (detail?.events ?? []).map((event) => ({
+    id: event.id,
+    source: 'event',
+    task_id: null,
+    type: event.type,
+    content: event.summary,
+    created_at: event.created_at,
+  }));
+  const taskCount = detail?.tasks.length ?? 0;
+  const completionReview = mission?.completion_review_status ?? 'none';
+  const completionReviewPending = completionReview === 'pending';
+  const completionReviewAccepted = completionReview === 'accepted';
+  const canPauseMission = mission?.status === 'active' && !completionReviewPending;
+  const canResumeMission = mission?.status === 'paused' && !completionReviewPending;
+  const canCancelMission = mission ? ['active', 'paused', 'blocked', 'failed'].includes(mission.status) : false;
+  const canAcceptCompletion = mission !== null && completionReviewPending
+    && ['active', 'paused', 'blocked'].includes(mission.status);
+  const canReopenMission = mission !== null && ['pending', 'accepted'].includes(completionReview)
+    && ['active', 'paused', 'blocked', 'completed'].includes(mission.status);
+  const canCreateTask = mission ? ['active', 'paused', 'blocked'].includes(mission.status) && !completionReviewPending && !completionReviewAccepted : false;
+  const canRetryTask = selectedTask ? ['queued', 'completed', 'failed', 'blocked'].includes(selectedTask.status) && !completionReviewPending && !completionReviewAccepted : false;
+  const canCancelTask = selectedTask ? ['queued', 'running', 'needs_retry', 'blocked', 'failed'].includes(selectedTask.status) : false;
+  const canSteerTask = selectedTask ? ['queued', 'blocked', 'failed'].includes(selectedTask.status) && !completionReviewPending && !completionReviewAccepted : false;
+
+  return (
+    <div className="flex h-full min-w-0 flex-col bg-[var(--pc-bg-base)]">
+      <div className="shrink-0 border-b border-pc-border bg-[var(--pc-bg-surface)]/90 px-4 py-3 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ListChecks size={17} className="text-pc-accent-light" />
+            <h1 className="text-sm font-semibold text-pc-text">General Manager</h1>
+          </div>
+          <span className="text-xs text-pc-text-muted">{missions.length} mission{missions.length === 1 ? '' : 's'}</span>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text"
+            aria-label="Open chat"
+          >
+            <MessageSquare size={13} />
+            <span>Chat</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { void refreshSelected(); }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text"
+            aria-label="Refresh GM"
+          >
+            <RefreshCw size={13} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden max-lg:grid-cols-1">
+        <aside className="min-h-0 border-r border-pc-border bg-[var(--pc-bg-surface)]/55 max-lg:border-b max-lg:border-r-0">
+          <form
+            className="space-y-2 border-b border-pc-border p-3"
+            onSubmit={(e) => { e.preventDefault(); void createMission(); }}
+          >
+            <label htmlFor="gm-command" className="text-[11px] font-medium uppercase tracking-wide text-pc-text-muted">GM command</label>
+            <textarea
+              id="gm-command"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
+              placeholder="Outcome..."
+            />
+            <label htmlFor="gm-criteria" className="text-[11px] font-medium uppercase tracking-wide text-pc-text-muted">Acceptance criteria</label>
+            <textarea
+              id="gm-criteria"
+              value={criteria}
+              onChange={(e) => setCriteria(e.target.value)}
+              rows={2}
+              className="w-full resize-none rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
+              placeholder="One per line"
+            />
+            <button
+              type="submit"
+              disabled={working !== null || !command.trim()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-pc-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-pc-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Create mission"
+            >
+              <SquarePlus size={14} />
+              <span>Create mission</span>
+            </button>
+          </form>
+
+          <div className="min-h-0 overflow-y-auto p-2">
+            {missions.length === 0 ? (
+              <div className="px-3 py-8 text-center text-sm text-pc-text-muted">No GM missions</div>
+            ) : missions.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSelectedMissionId(item.id)}
+                className={`mb-1 w-full rounded-xl px-3 py-2 text-left transition-colors ${
+                  selectedMissionId === item.id
+                    ? 'bg-pc-accent/10 text-pc-text'
+                    : 'text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.title}</span>
+                  <StatusPill status={item.status} />
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs text-pc-text-muted">{item.goal}</p>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="min-h-0 overflow-y-auto p-4">
+          {error && (
+            <div className="mb-3 rounded-xl border border-red-400/25 bg-red-400/10 px-3 py-2 text-sm text-red-500 dark:text-red-300">
+              {error}
+            </div>
+          )}
+
+          {!mission ? (
+            <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-pc-text-muted">
+              Select or create a mission.
+            </div>
+          ) : (
+            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+              <section className="min-w-0 space-y-4">
+                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-center gap-2">
+                        <StatusPill status={mission.status} />
+                        <span className="text-xs text-pc-text-faint">{relativeTime(new Date(mission.updated_at).getTime())}</span>
+                      </div>
+                      <h2 className="text-lg font-semibold text-pc-text">{mission.title}</h2>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-pc-text-secondary">{mission.goal}</p>
+                      {sourceContext && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-pc-text-muted">
+                          <Link size={13} aria-hidden="true" />
+                          <span>{sourceContext.kind === 'web_session' ? 'Source: web session' : 'Source: Telegram GM topic'}</span>
+                          {sourceContext.kind === 'web_session' && onOpenSourceSession && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenSourceSession(sourceContext.sessionId)}
+                              className="inline-flex h-6 w-6 items-center justify-center text-pc-text-secondary hover:text-pc-text"
+                              aria-label="Open source session"
+                              title="Open source session"
+                            >
+                              <CornerUpLeft size={14} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {completionReviewPending && (
+                        <p className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-300">Awaiting completion review</p>
+                      )}
+                      {completionReviewAccepted && (
+                        <p className="mt-3 text-sm font-medium text-emerald-600 dark:text-emerald-300">Completion accepted</p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { void missionAction('gm.mission.accept_completion', 'Completion accepted by operator'); }}
+                        disabled={!canAcceptCompletion || working !== null}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/35 px-3 py-1.5 text-xs text-emerald-600 hover:bg-emerald-400/10 dark:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Accept completion"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Accept</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void missionAction('gm.mission.reopen', 'Mission reopened by operator'); }}
+                        disabled={!canReopenMission || working !== null}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Reopen mission"
+                      >
+                        <Undo2 size={13} />
+                        <span>Reopen</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void missionAction('gm.mission.pause', 'Paused by operator'); }}
+                        disabled={!canPauseMission || working !== null}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Pause mission"
+                      >
+                        <Pause size={13} />
+                        <span>Pause</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void missionAction('gm.mission.resume', 'Resumed by operator'); }}
+                        disabled={!canResumeMission || working !== null}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Resume mission"
+                      >
+                        <Play size={13} />
+                        <span>Resume</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void missionAction('gm.mission.cancel', 'Cancelled by operator'); }}
+                        disabled={!canCancelMission || working !== null}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-red-400/35 px-3 py-1.5 text-xs text-red-500 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Cancel mission"
+                      >
+                        <XCircle size={13} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {mission.acceptance_criteria.length > 0 && (
+                    <div className="mt-4 border-t border-pc-border pt-3">
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-pc-text-muted">Acceptance</h3>
+                      <ul className="space-y-1.5">
+                        {mission.acceptance_criteria.map((item, idx) => (
+                          <li key={idx} className="flex gap-2 text-sm text-pc-text-secondary">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-pc-accent/70" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-pc-text">Tasks</h3>
+                    <span className="text-xs text-pc-text-muted">{taskCount}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {(detail?.tasks ?? []).map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => setSelectedTaskId(task.id)}
+                        className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                          selectedTaskId === task.id
+                            ? 'border-pc-accent/45 bg-pc-accent/10'
+                            : 'border-pc-border hover:bg-[var(--pc-hover)]'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-pc-text">{task.title}</span>
+                          <span className="rounded-full bg-[var(--pc-hover)] px-2 py-0.5 text-[10px] text-pc-text-muted">{task.execution?.policy.model ?? task.execution?.policy.runner ?? task.runner}</span>
+                          {task.execution?.policy.toolMode === 'none' && (
+                            <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] text-emerald-600 dark:text-emerald-300">no tools</span>
+                          )}
+                          <span className="rounded-full bg-[var(--pc-hover)] px-2 py-0.5 text-[10px] text-pc-text-muted">attempt {task.attempt}</span>
+                          <StatusPill status={task.status} />
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-pc-text-muted">{task.objective}</p>
+                      </button>
+                    ))}
+                    {(detail?.tasks ?? []).length === 0 && (
+                      <p className="py-4 text-center text-sm text-pc-text-muted">No delegated tasks</p>
+                    )}
+                  </div>
+
+                  <form
+                    className="mt-4 grid gap-2 border-t border-pc-border pt-3 2xl:grid-cols-[0.8fr_1.2fr_auto]"
+                    onSubmit={(e) => { e.preventDefault(); void createTask(); }}
+                  >
+                    <input
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      disabled={!canCreateTask}
+                      className="rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
+                      placeholder="Task title"
+                    />
+                    <input
+                      value={taskObjective}
+                      onChange={(e) => setTaskObjective(e.target.value)}
+                      className="rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
+                      placeholder="Objective"
+                    />
+                    <button
+                      type="submit"
+                      disabled={working !== null || !canCreateTask || !taskTitle.trim() || !taskObjective.trim()}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-pc-border px-3 py-2 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <SquarePlus size={13} />
+                      <span>Add task</span>
+                    </button>
+                  </form>
+                </div>
+              </section>
+
+              <aside className="min-w-0 space-y-4">
+                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <MessageSquare size={15} className="text-pc-accent-light" />
+                    <h3 className="text-sm font-semibold text-pc-text">Task Channel</h3>
+                  </div>
+                  {selectedTask ? (
+                    <>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { void taskAction('gm.task.retry', 'Retry requested by operator'); }}
+                          disabled={!canRetryTask || working !== null}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="Retry task"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Retry</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void taskAction('gm.task.cancel', 'Cancelled by operator'); }}
+                          disabled={!canCancelTask || working !== null}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-red-400/35 px-3 py-1.5 text-xs text-red-500 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="Cancel task"
+                        >
+                          <XCircle size={13} />
+                          <span>Cancel</span>
+                        </button>
+                      </div>
+                      <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-pc-border bg-[var(--pc-bg-base)] p-2">
+                        {turns.length === 0 ? (
+                          <p className="px-2 py-6 text-center text-sm text-pc-text-muted">No task messages</p>
+                        ) : turns.map((turn) => (
+                          <div key={turn.id} className="rounded-lg bg-[var(--pc-bg-surface)] px-3 py-2">
+                            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-pc-text-faint">
+                              <span>{turn.role}</span>
+                              <span>{turn.kind}</span>
+                              <span className="ml-auto normal-case tracking-normal">{relativeTime(new Date(turn.created_at).getTime())}</span>
+                            </div>
+                            <p className="whitespace-pre-wrap text-sm text-pc-text-secondary">{turn.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <form
+                        className="mt-3 flex gap-2"
+                        onSubmit={(e) => { e.preventDefault(); void sendSteering(); }}
+                      >
+                        <label htmlFor="gm-steering" className="sr-only">Task steering note</label>
+                        <input
+                          id="gm-steering"
+                          value={steering}
+                          onChange={(e) => setSteering(e.target.value)}
+                          disabled={!canSteerTask}
+                          className="min-w-0 flex-1 rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
+                          placeholder="Steer selected task"
+                          aria-label="Task steering note"
+                        />
+                        <button
+                          type="submit"
+                          disabled={working !== null || !canSteerTask || !steering.trim()}
+                          className="inline-flex items-center gap-2 rounded-xl bg-pc-accent px-3 py-2 text-xs font-medium text-white hover:bg-pc-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="Send note"
+                        >
+                          <Send size={13} />
+                          <span>Send note</span>
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <p className="py-6 text-center text-sm text-pc-text-muted">Select a task.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                  <h3 className="mb-3 text-sm font-semibold text-pc-text">Mission Timeline</h3>
+                  <div className="space-y-2">
+                    {timeline.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-pc-text-muted">No activity</p>
+                    ) : timeline.map((item) => (
+                      <div key={`${item.source}:${item.id}`} className="rounded-lg border border-pc-border/70 px-3 py-2">
+                        <div className="mb-1 flex items-center gap-2 text-[10px] text-pc-text-faint">
+                          <span className="font-mono">{item.source === 'turn' && item.role ? `${item.role} · ` : ''}{item.type}</span>
+                          <span className="ml-auto">{relativeTime(new Date(item.created_at).getTime())}</span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm text-pc-text-secondary">{item.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const label = status.replace(/_/g, ' ');
+  const base = 'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium';
+  if (status === 'active' || status === 'queued') {
+    return <span className={`${base} bg-sky-400/15 text-sky-500 dark:text-sky-300`}>{label}</span>;
+  }
+  if (status === 'running') {
+    return <span className={`${base} bg-yellow-400/15 text-yellow-600 dark:text-yellow-300`}>{label}</span>;
+  }
+  if (status === 'completed') {
+    return <span className={`${base} bg-emerald-400/15 text-emerald-600 dark:text-emerald-300`}>{label}</span>;
+  }
+  if (status === 'cancelled' || status === 'failed') {
+    return <span className={`${base} bg-red-400/15 text-red-500 dark:text-red-300`}>{label}</span>;
+  }
+  return <span className={`${base} bg-[var(--pc-hover)] text-pc-text-muted`}>{label}</span>;
+}

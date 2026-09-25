@@ -510,7 +510,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
             <div className="relative shrink-0">
               <div className="absolute -inset-1.5 rounded-xl bg-gradient-to-r from-cyan-400/15 to-violet-500/15 blur-lg" />
               <div className="relative flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden">
-                <img src="/logo.png" alt="PinchChat" className="h-8 w-8 object-contain" />
+                <img src={`${import.meta.env.BASE_URL}logo.png`} alt="PinchChat" className="h-8 w-8 object-contain" />
               </div>
             </div>
             <span className="font-semibold text-sm text-pc-text tracking-wide truncate">{t('sidebar.title')}</span>
@@ -665,12 +665,12 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
               e.preventDefault();
               const next = focusIdx < len - 1 ? focusIdx + 1 : 0;
               setFocusIdx(next);
-              listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]')[next]?.scrollIntoView({ block: 'nearest' });
+              listRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[next]?.scrollIntoView({ block: 'nearest' });
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               const prev = focusIdx > 0 ? focusIdx - 1 : len - 1;
               setFocusIdx(prev);
-              listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]')[prev]?.scrollIntoView({ block: 'nearest' });
+              listRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[prev]?.scrollIntoView({ block: 'nearest' });
             } else if (e.key === 'Enter' && focusIdx >= 0 && focusIdx < len) {
               e.preventDefault();
               onSwitch(filtered[focusIdx].key);
@@ -719,9 +719,10 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                     <div className="flex-1 h-px bg-[var(--pc-hover)]" />
                   </div>
                 )}
-                <button
+                <div
                   role="option"
                   aria-selected={isActive}
+                  tabIndex={-1}
                   draggable={!filter.trim()}
                   onDragStart={(e) => {
                     setDragKey(s.key);
@@ -756,7 +757,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                   }}
                   onClick={() => { onSwitch(s.key); onClose(); }}
                   onMouseEnter={() => setFocusIdx(idx)}
-                  className={`group/item w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left text-sm transition-all mb-1 ${
+                  className={`group/item w-full flex flex-col px-3 py-2.5 rounded-2xl text-left text-sm transition-all mb-1 ${
                     isActive
                       ? 'bg-[var(--pc-hover)] text-pc-accent-light border border-pc-border shadow-[0_0_12px_rgba(34,211,238,0.08)]'
                       : s.isActive
@@ -764,19 +765,20 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         : 'text-pc-text-secondary hover:bg-[var(--pc-hover)] border border-transparent'
                   } ${isFocused && !isActive ? 'ring-1 ring-[var(--pc-accent-dim)]' : ''} ${isDragged ? 'opacity-40' : ''} ${isDropTarget ? 'ring-1 ring-[var(--pc-accent)] bg-[var(--pc-accent-glow)]' : ''}`}
                 >
-                  <div className="relative">
-                    <SessionIcon session={s} isActive={s.isActive} isCurrentSession={isActive} />
-                    {s.isActive && (
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(168,85,247,0.7)] animate-pulse" />
-                    )}
-                    {s.hasUnread && !isActive && (
-                      <span className="absolute -top-1.5 -left-1.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-[var(--pc-accent)] text-[9px] font-bold text-zinc-900 leading-none px-1 shadow-[0_0_8px_rgba(34,211,238,0.5)]">
-                        {(s.unreadCount || 1) > 99 ? '99+' : (s.unreadCount || 1)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="relative shrink-0">
+                      <SessionIcon session={s} isActive={s.isActive} isCurrentSession={isActive} />
+                      {s.isActive && (
+                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(168,85,247,0.7)] animate-pulse" />
+                      )}
+                      {s.hasUnread && !isActive && (
+                        <span className="absolute -top-1.5 -left-1.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-[var(--pc-accent)] text-[9px] font-bold text-zinc-900 leading-none px-1 shadow-[0_0_8px_rgba(34,211,238,0.5)]">
+                          {(s.unreadCount || 1) > 99 ? '99+' : (s.unreadCount || 1)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
                       {renamingKey === s.key ? (
                         <input
                           ref={renameInputRef}
@@ -795,7 +797,8 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         />
                       ) : (
                         <span
-                          className="flex-1 truncate"
+                          data-testid={`session-title-${s.key}`}
+                          className="flex-1 min-w-0 truncate text-[13px] font-medium leading-tight text-pc-text-secondary"
                           onDoubleClick={(e) => startRename(s.key, customNames[s.key] || sessionDisplayName(s), e)}
                           title={s.channel ? `${s.channel} — ${customNames[s.key] || sessionDisplayName(s)}` : t('sidebar.rename')}
                         >
@@ -818,6 +821,16 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         const rel = relativeTime(s.updatedAt);
                         return rel ? <span className="text-[10px] text-pc-text-muted tabular-nums shrink-0">{rel}</span> : null;
                       })()}
+                      {s.messageCount != null && (
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light' : 'bg-[var(--pc-hover)] text-pc-text-muted'}`}>
+                          {s.messageCount}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      data-testid={`session-actions-${s.key}`}
+                      className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover/item:opacity-70 group-focus-within/item:opacity-100 transition-opacity"
+                    >
                       {/* Inline-preview toggle, all members (not admin-gated).
                           Fetches last 10 turns lazily, renders below row. */}
                       <button
@@ -909,11 +922,6 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                       >
                         <Trash2 size={12} />
                       </button>
-                      {s.messageCount != null && (
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light' : 'bg-[var(--pc-hover)] text-pc-text-muted'}`}>
-                          {s.messageCount}
-                        </span>
-                      )}
                     </div>
                     {s.lastMessagePreview && (
                       <p className="text-[11px] text-pc-text-muted truncate mt-0.5 leading-tight">{s.lastMessagePreview.replace(/\s+/g, ' ').slice(0, 80)}</p>
@@ -932,8 +940,9 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         </div>
                       );
                     })()}
+                    </div>
                   </div>
-                </button>
+                </div>
                 {isAdmin && expandedSubagents.has(s.key) && (
                   <SubagentList
                     sessionKey={s.key}

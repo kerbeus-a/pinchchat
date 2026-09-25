@@ -153,4 +153,29 @@ describe('Sidebar channel chip', () => {
     expect(chip.className).toContain('shrink-0');
     expect(chip.className).toContain('text-[9px]');
   });
+
+  it('keeps the session title separate from row action tools', () => {
+    render(
+      <Sidebar
+        {...baseProps()}
+        sessions={[
+          {
+            key: 's1',
+            label: 'Long customer planning thread that must remain readable',
+            channel: 'Group topic 30',
+            messageCount: 42,
+            updatedAt: Date.now(),
+          },
+        ]}
+      />,
+    );
+
+    const title = screen.getByTestId('session-title-s1');
+    const actions = screen.getByTestId('session-actions-s1');
+
+    expect(title.textContent).toContain('Long customer planning thread');
+    expect(title.className).toContain('font-medium');
+    expect(actions.className).toContain('mt-1');
+    expect(actions.className).toContain('justify-end');
+  });
 });
