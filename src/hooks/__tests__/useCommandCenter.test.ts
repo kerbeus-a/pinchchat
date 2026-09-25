@@ -59,4 +59,30 @@ describe('useCommandCenter', () => {
     expect(result.current.sessionContext?.systemPrompt).toBe('Instructions for action');
     expect(send).toHaveBeenCalledTimes(7);
   });
+
+  it('keeps session context when private source requests are unavailable', async () => {
+    const send = vi.fn(async (method: string) => {
+      if (method === 'workspaces.list') {
+        return { workspaces: [{ id: 'tasterra', label: 'TasTerra', description: 'Operations', ownerOnly: false }] };
+      }
+      if (method === 'session.scope.get') {
+        return { scope: { workspaceId: 'tasterra', mode: 'query', sourceIds: [], persisted: true } };
+      }
+      if (method === 'sources.list' || method === 'evidence.list') {
+        throw new Error('Private source token required');
+      }
+      if (method === 'session.context.get') {
+        return { context: { systemPrompt: 'Live session instructions', historyMode: 'runner-managed' } };
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    }) as unknown as CommandCenterSend;
+
+    const { result } = renderHook(() => useCommandCenter(send, 'session-1', true, true));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sessionContext?.systemPrompt).toBe('Live session instructions');
+    expect(result.current.sources).toEqual([]);
+    expect(result.current.evidence).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
 });

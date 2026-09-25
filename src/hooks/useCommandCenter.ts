@@ -77,16 +77,25 @@ export function useCommandCenter(
         setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
         return;
       }
-      const [sourceResponse, evidenceResponse, contextResponse] = await Promise.all([
+      const [sourceResult, evidenceResult, contextResult] = await Promise.allSettled([
         send('sources.list', { workspaceId: nextScope.workspaceId }),
         send('evidence.list', { sessionKey, workspaceId: nextScope.workspaceId }),
         send('session.context.get', { sessionKey }),
       ]);
       if (!cancelled) {
-        setSources(parseSourceConnections(sourceResponse.sources));
-          setEvidence(parseEvidenceReferences(evidenceResponse.evidence));
-          setSessionContext(parseSessionContext(contextResponse.context));
-          setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
+        setSources(sourceResult.status === 'fulfilled'
+          ? parseSourceConnections(sourceResult.value.sources)
+          : []);
+        setEvidence(evidenceResult.status === 'fulfilled'
+          ? parseEvidenceReferences(evidenceResult.value.evidence)
+          : []);
+        setSessionContext(contextResult.status === 'fulfilled'
+          ? parseSessionContext(contextResult.value.context)
+          : null);
+        setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
+        if (contextResult.status === 'rejected') {
+          setError('Session context is unavailable');
+        }
       }
     }).catch((cause: unknown) => {
       if (!cancelled) setError(cause instanceof Error ? cause.message : 'Command center unavailable');
@@ -127,18 +136,21 @@ export function useCommandCenter(
           setEvidenceContext(`${sessionKey}:${persisted.workspaceId}`);
           return persisted;
         }
-        try {
-          const [, , contextResponse] = await Promise.all([
-            loadSources(persisted.workspaceId),
-            loadEvidence(persisted.workspaceId),
-            send('session.context.get', { sessionKey }),
-          ]);
-          setSessionContext(parseSessionContext(contextResponse.context));
-        } catch {
-          setSources([]);
+        const [sourceResult, evidenceResult, contextResult] = await Promise.allSettled([
+          loadSources(persisted.workspaceId),
+          loadEvidence(persisted.workspaceId),
+          send('session.context.get', { sessionKey }),
+        ]);
+        if (sourceResult.status === 'rejected') setSources([]);
+        if (evidenceResult.status === 'rejected') {
           setEvidence([]);
-          setEvidenceContext('');
-          setError('Scope saved, but source health is unavailable');
+          setEvidenceContext(`${sessionKey}:${persisted.workspaceId}`);
+        }
+        if (contextResult.status === 'fulfilled') {
+          setSessionContext(parseSessionContext(contextResult.value.context));
+        } else {
+          setSessionContext(null);
+          setError('Scope saved, but session context is unavailable');
         }
       } else if (persisted.mode !== scope.mode && privateSourceAccess) {
         try {
