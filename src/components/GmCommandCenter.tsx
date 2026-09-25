@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Bot, CheckCircle2, CornerUpLeft, Cpu, FileText, GitBranch, Link, MessageSquare, Network, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
+import { Activity, Bot, CheckCircle2, CornerUpLeft, Cpu, FileText, GitBranch, KeyRound, Link, MessageSquare, Network, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
 import type { JsonPayload } from '../lib/kinGateway';
 import { relativeTime } from '../lib/relativeTime';
 
@@ -113,10 +113,14 @@ export function GmCommandCenter({
   send,
   sourceSessionId,
   onOpenSourceSession,
+  accessAvailable = true,
+  onRequestAccess,
 }: {
   send: SendFn;
   sourceSessionId?: string;
   onOpenSourceSession?: (sessionId: string) => void;
+  accessAvailable?: boolean;
+  onRequestAccess?: () => void;
 }) {
   const [missions, setMissions] = useState<GmMission[]>([]);
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
@@ -178,8 +182,9 @@ export function GmCommandCenter({
   }, [send]);
 
   useEffect(() => {
+    if (!accessAvailable) return;
     loadMissions().catch(() => setError('Could not load GM missions'));
-  }, [loadMissions]);
+  }, [accessAvailable, loadMissions]);
 
   useEffect(() => {
     if (!selectedMissionId) {
@@ -373,6 +378,50 @@ export function GmCommandCenter({
   const dependencyNames = (selectedTask?.execution?.dependsOnTaskIds ?? []).map((taskId) => (
     detail?.tasks.find((task) => task.id === taskId)?.title ?? shortId(taskId)
   ));
+
+  if (!accessAvailable) {
+    return (
+      <div className="flex h-full min-w-0 flex-col bg-[var(--pc-bg-base)]">
+        <div className="shrink-0 border-b border-pc-border bg-[var(--pc-bg-surface)]/90 px-4 py-3 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Network size={17} className="text-pc-accent-light" />
+              <h1 className="text-sm font-semibold text-pc-text">GM Activity</h1>
+            </div>
+            <span className="text-xs text-pc-text-muted">Protected</span>
+            <button
+              type="button"
+              onClick={() => { window.location.hash = ''; }}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-pc-border px-3 py-1.5 text-xs text-pc-text-secondary hover:bg-[var(--pc-hover)] hover:text-pc-text"
+              aria-label="Open chat"
+            >
+              <MessageSquare size={13} />
+              <span>Chat</span>
+            </button>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-md text-center">
+            <KeyRound size={24} className="mx-auto text-pc-accent-light" aria-hidden="true" />
+            <h2 className="mt-4 text-base font-semibold text-pc-text">Sign in to view GM activity</h2>
+            <p className="mt-2 text-sm leading-6 text-pc-text-muted">
+              Delegation context and worker activity are protected because they can contain private task instructions.
+            </p>
+            {onRequestAccess && (
+              <button
+                type="button"
+                onClick={onRequestAccess}
+                className="mt-5 inline-flex h-9 items-center gap-2 rounded-md bg-pc-accent px-4 text-sm font-medium text-white hover:brightness-110"
+              >
+                <KeyRound size={14} aria-hidden="true" />
+                <span>Unlock GM Activity</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--pc-bg-base)]">

@@ -46,6 +46,18 @@ const task = {
 };
 
 describe('GmCommandCenter', () => {
+  it('offers an unlock instead of loading protected activity without admin access', () => {
+    const send = vi.fn();
+    const onRequestAccess = vi.fn();
+
+    render(<GmCommandCenter send={send} accessAvailable={false} onRequestAccess={onRequestAccess} />);
+
+    expect(screen.getByText('Sign in to view GM activity')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock GM Activity' }));
+    expect(onRequestAccess).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('loads missions and shows mission, task, and event controls', async () => {
     const send = vi.fn()
       .mockResolvedValueOnce({ missions: [mission] })

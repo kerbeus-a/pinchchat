@@ -323,6 +323,8 @@ export default function App() {
               send={send}
               sourceSessionId={sessions.find((session) => session.key === activeSession)?.channel === 'Web' ? activeSession : undefined}
               onOpenSourceSession={handleSessionSwitch}
+              accessAvailable={agentIdentity?.isAdmin === true}
+              onRequestAccess={() => setActionUnlockOpen(true)}
             />
           ) : commandView === 'review' ? (
             <ReviewView />

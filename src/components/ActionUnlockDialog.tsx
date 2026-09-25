@@ -52,7 +52,7 @@ export function ActionUnlockDialog({ open, connecting, error, onClose, onUnlock 
       <form onSubmit={submit} className="relative w-full max-w-sm rounded-lg border border-pc-border bg-[var(--pc-bg-base)] shadow-2xl">
         <div className="flex items-center gap-2.5 border-b border-pc-border px-5 py-4">
           <KeyRound size={17} className="text-pc-accent-light" />
-          <h2 id="action-unlock-title" className="flex-1 text-sm font-semibold text-pc-text">Unlock Action mode</h2>
+          <h2 id="action-unlock-title" className="flex-1 text-sm font-semibold text-pc-text">Unlock protected controls</h2>
           <button type="button" onClick={close} disabled={connecting} aria-label="Close" title="Close" className="flex h-8 w-8 items-center justify-center rounded-md text-pc-text-muted hover:bg-[var(--pc-hover)] hover:text-pc-text disabled:opacity-40">
             <X size={16} />
           </button>
