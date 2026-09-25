@@ -16,6 +16,7 @@ import { SwarmView } from './components/SwarmView';
 import { GmCommandCenter } from './components/GmCommandCenter';
 import { CommandNavigation } from './components/CommandNavigation';
 import { CommandCenterBar } from './components/CommandCenterBar';
+import { ActionUnlockDialog } from './components/ActionUnlockDialog';
 import { EvidencePanel } from './components/EvidencePanel';
 import { ReviewView } from './components/ReviewView';
 import { SourcesView } from './components/SourcesView';
@@ -126,6 +127,7 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandView, setCommandView] = useState<CommandView>(() => commandViewFromHash(window.location.hash));
   const [evidenceOpen, setEvidenceOpen] = useState(() => window.innerWidth >= 1280);
+  const [actionUnlockOpen, setActionUnlockOpen] = useState(false);
   const commandCenter = useCommandCenter(send, activeSession, authenticated === true);
   const wasGeneratingRef = useRef(isGenerating);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
@@ -147,6 +149,14 @@ export default function App() {
     toastLeaveTimerRef.current = setTimeout(() => setToast(prev => prev ? { ...prev, leaving: true } : null), 1700);
     toastTimerRef.current = setTimeout(() => setToast(null), 2000);
   }, []);
+
+  const unlockActionMode = useCallback((token: string) => {
+    const bridgeUrl = window.location.pathname.startsWith('/kinchat')
+      ? `${window.location.origin}/kinchat/v1`
+      : 'http://192.168.1.14:3142/kinchat/v1';
+    setActionUnlockOpen(false);
+    login(bridgeUrl, token);
+  }, [login]);
 
   useEffect(() => () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -296,7 +306,9 @@ export default function App() {
             saving={commandCenter.saving}
             error={commandCenter.error}
             evidenceOpen={evidenceOpen}
+            actionAvailable={agentIdentity?.isAdmin === true}
             onToggleEvidence={() => setEvidenceOpen((open) => !open)}
+            onRequestActionAccess={() => setActionUnlockOpen(true)}
             onUpdateScope={commandCenter.updateScope}
           />
           {commandView === 'swarm' ? (
@@ -361,6 +373,13 @@ export default function App() {
           onClose={() => setEvidenceOpen(false)}
         />
       </div>
+      <ActionUnlockDialog
+        open={actionUnlockOpen}
+        connecting={isConnecting}
+        error={connectError}
+        onClose={() => setActionUnlockOpen(false)}
+        onUnlock={unlockActionMode}
+      />
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       {currentApproval && (
         <ExecApprovalModal

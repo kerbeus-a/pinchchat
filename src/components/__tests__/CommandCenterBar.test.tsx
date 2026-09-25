@@ -26,7 +26,9 @@ describe('CommandCenterBar', () => {
         saving={false}
         error={null}
         evidenceOpen={false}
+        actionAvailable={true}
         onToggleEvidence={vi.fn()}
+        onRequestActionAccess={vi.fn()}
         onUpdateScope={update}
       />,
     );
@@ -48,13 +50,40 @@ describe('CommandCenterBar', () => {
         saving={false}
         error={null}
         evidenceOpen={false}
+        actionAvailable={true}
         onToggleEvidence={vi.fn()}
+        onRequestActionAccess={vi.fn()}
         onUpdateScope={update}
       />,
     );
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'home' } });
     expect(window.confirm).toHaveBeenCalledOnce();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('requests authentication instead of changing to Action mode when locked', () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const requestAccess = vi.fn();
+    render(
+      <CommandCenterBar
+        workspaces={workspaces}
+        scope={{ workspaceId: 'tasterra', mode: 'query', sourceIds: [], persisted: true }}
+        sources={[]}
+        health={{ label: 'No sources', status: 'unknown' }}
+        loading={false}
+        saving={false}
+        error={null}
+        evidenceOpen={false}
+        actionAvailable={false}
+        onToggleEvidence={vi.fn()}
+        onRequestActionAccess={requestAccess}
+        onUpdateScope={update}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /action/i }));
+    expect(requestAccess).toHaveBeenCalledOnce();
     expect(update).not.toHaveBeenCalled();
   });
 });

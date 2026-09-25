@@ -1,4 +1,4 @@
-import { ChevronDown, Database, PanelRight, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Database, LockKeyhole, PanelRight, ShieldCheck } from 'lucide-react';
 import { useRef } from 'react';
 import type {
   InteractionMode,
@@ -25,7 +25,9 @@ export function CommandCenterBar({
   saving,
   error,
   evidenceOpen,
+  actionAvailable,
   onToggleEvidence,
+  onRequestActionAccess,
   onUpdateScope,
 }: {
   workspaces: WorkspaceDefinition[];
@@ -36,7 +38,9 @@ export function CommandCenterBar({
   saving: boolean;
   error: string | null;
   evidenceOpen: boolean;
+  actionAvailable: boolean;
   onToggleEvidence: () => void;
+  onRequestActionAccess: () => void;
   onUpdateScope: (next: { workspaceId?: WorkspaceId; mode?: InteractionMode; sourceIds?: string[] }) => Promise<unknown>;
 }) {
   const sourceMenuRef = useRef<HTMLDetailsElement>(null);
@@ -84,12 +88,20 @@ export function CommandCenterBar({
               key={mode}
               type="button"
               disabled={disabled}
-              onClick={() => { void onUpdateScope({ mode }); }}
+              onClick={() => {
+                if (mode === 'action' && !actionAvailable) {
+                  onRequestActionAccess();
+                  return;
+                }
+                void onUpdateScope({ mode });
+              }}
               className={`min-w-[62px] rounded px-2 text-xs font-medium capitalize transition-colors disabled:opacity-60 ${
                 scope.mode === mode ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light' : 'text-pc-text-muted hover:text-pc-text'
               }`}
               aria-pressed={scope.mode === mode}
+              title={mode === 'action' && !actionAvailable ? 'Sign in to use Action mode' : `${mode[0].toUpperCase()}${mode.slice(1)} mode`}
             >
+              {mode === 'action' && !actionAvailable && <LockKeyhole size={11} className="mr-1 inline" aria-hidden="true" />}
               {mode}
             </button>
           ))}
