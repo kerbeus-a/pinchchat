@@ -21,6 +21,7 @@ interface SessionRow {
   total_input_tokens?: unknown;
   output_tokens?: unknown;
   channel?: unknown;
+  topic_name?: unknown;
 }
 
 interface SubagentRow {
@@ -228,6 +229,7 @@ export class KinGatewayClient {
           key: String(s.id ?? ''),
           sessionKey: String(s.id ?? ''),
           label: String(s.title || s.preview || 'Untitled'),
+          topicName: typeof s.topic_name === 'string' ? s.topic_name : undefined,
           messageCount: typeof s.message_count === 'number' ? s.message_count : undefined,
           model: typeof s.model === 'string' ? s.model : undefined,
           updatedAt: typeof s.last_active === 'number'
@@ -262,6 +264,7 @@ export class KinGatewayClient {
           key: String(s.id ?? ''),
           sessionKey: String(s.id ?? ''),
           label: String(s.title || s.preview || 'Untitled'),
+          topicName: typeof s.topic_name === 'string' ? s.topic_name : undefined,
           messageCount: typeof s.message_count === 'number' ? s.message_count : undefined,
           model: typeof s.model === 'string' ? s.model : undefined,
           updatedAt: typeof s.last_active === 'number'

@@ -4,13 +4,15 @@ import type { Session } from '../types';
  * Derive a human-friendly display name for a session.
  *
  * Priority:
- * 1. label (if set, e.g. sub-agent labels)
- * 2. "Main" for kind=main
- * 3. Kind + channel (e.g. "Cron · telegram")
- * 4. Channel name capitalized
- * 5. Cleaned session key (strip agent:xxx: prefix, truncate UUIDs)
+ * 1. Telegram topic name (authoritative for topic-backed chats)
+ * 2. label (if set, e.g. sub-agent labels)
+ * 3. "Main" for kind=main
+ * 4. Kind + channel (e.g. "Cron · telegram")
+ * 5. Channel name capitalized
+ * 6. Cleaned session key (strip agent:xxx: prefix, truncate UUIDs)
  */
 export function sessionDisplayName(session: Session): string {
+  if (session.topicName?.trim()) return session.topicName.trim();
   if (session.label) return session.label;
 
   const kind = session.kind;

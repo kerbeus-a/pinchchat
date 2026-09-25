@@ -481,7 +481,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
     }
     if (filter.trim()) {
       const q = filter.toLowerCase();
-      list = list.filter(s => (customNames[s.key] || sessionDisplayName(s)).toLowerCase().includes(q));
+      list = list.filter(s => (s.topicName || customNames[s.key] || sessionDisplayName(s)).toLowerCase().includes(q));
     }
     // Sort pinned sessions to top (preserving relative order within each group)
     const pinnedList = list.filter(s => pinned.has(s.key));
@@ -712,6 +712,8 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
             const isFirstUnpinned = !isPinned && idx > 0 && pinned.has(filtered[idx - 1].key);
             const isDragged = dragKey === s.key;
             const isDropTarget = dropTarget === s.key && dragKey !== s.key;
+            const topicName = s.topicName?.trim();
+            const displayName = topicName || customNames[s.key] || sessionDisplayName(s);
             return (
               <div key={s.key}>
                 {isFirstUnpinned && (
@@ -778,7 +780,10 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        data-testid={`session-title-row-${s.key}`}
+                        className="flex items-center min-w-0"
+                      >
                       {renamingKey === s.key ? (
                         <input
                           ref={renameInputRef}
@@ -799,22 +804,23 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         <span
                           data-testid={`session-title-${s.key}`}
                           className="flex-1 min-w-0 truncate text-[13px] font-medium leading-tight text-pc-text-secondary"
-                          onDoubleClick={(e) => startRename(s.key, customNames[s.key] || sessionDisplayName(s), e)}
-                          title={s.channel ? `${s.channel} — ${customNames[s.key] || sessionDisplayName(s)}` : t('sidebar.rename')}
+                          onDoubleClick={topicName ? undefined : (e) => startRename(s.key, displayName, e)}
+                          title={displayName}
                         >
-                          {/* Tiny channel chip showing where the session lives
-                              (DM / Group / Web / DM topic 14 / Group topic 30).
-                              Kept short and dim so the actual title still wins
-                              attention. Hidden when no channel is set. */}
-                          {s.channel && (
-                            <span
-                              className="mr-1 inline-block align-middle text-[9px] text-pc-text-muted bg-[var(--pc-hover)] border border-pc-border rounded px-1 py-[1px] tracking-tight shrink-0"
-                              aria-label={`channel: ${s.channel}`}
-                            >
-                              {s.channel}
-                            </span>
-                          )}
-                          {customNames[s.key] || sessionDisplayName(s)}
+                          {displayName}
+                        </span>
+                      )}
+                      </div>
+                      <div
+                        data-testid={`session-meta-row-${s.key}`}
+                        className="mt-1 flex items-center gap-1.5 min-w-0"
+                      >
+                      {s.channel && (
+                        <span
+                          className="inline-block max-w-[96px] truncate align-middle text-[9px] text-pc-text-muted bg-[var(--pc-hover)] border border-pc-border rounded px-1 py-[1px] tracking-tight shrink-0"
+                          aria-label={`channel: ${s.channel}`}
+                        >
+                          {s.channel}
                         </span>
                       )}
                       {(() => {
@@ -822,14 +828,13 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                         return rel ? <span className="text-[10px] text-pc-text-muted tabular-nums shrink-0">{rel}</span> : null;
                       })()}
                       {s.messageCount != null && (
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light' : 'bg-[var(--pc-hover)] text-pc-text-muted'}`}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light' : 'bg-[var(--pc-hover)] text-pc-text-muted'}`}>
                           {s.messageCount}
                         </span>
                       )}
-                    </div>
                     <div
                       data-testid={`session-actions-${s.key}`}
-                      className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover/item:opacity-70 group-focus-within/item:opacity-100 transition-opacity"
+                      className="ml-auto flex items-center justify-end gap-0.5 opacity-0 group-hover/item:opacity-70 group-focus-within/item:opacity-100 transition-opacity"
                     >
                       {/* Inline-preview toggle, all members (not admin-gated).
                           Fetches last 10 turns lazily, renders below row. */}
@@ -861,14 +866,16 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                           {expandedSubagents.has(s.key) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         </button>
                       )}
-                      <button
-                        onClick={(e) => startRename(s.key, customNames[s.key] || sessionDisplayName(s), e)}
-                        className="shrink-0 p-0.5 rounded-lg transition-all text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary"
-                        title={t('sidebar.rename')}
-                        aria-label={t('sidebar.rename')}
-                      >
-                        <Pencil size={11} />
-                      </button>
+                      {!topicName && (
+                        <button
+                          onClick={(e) => startRename(s.key, displayName, e)}
+                          className="shrink-0 p-0.5 rounded-lg transition-all text-pc-text-faint opacity-0 group-hover/item:opacity-60 hover:!opacity-100 hover:text-pc-text-secondary"
+                          title={t('sidebar.rename')}
+                          aria-label={t('sidebar.rename')}
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => togglePin(s.key, e)}
                         className={`shrink-0 p-0.5 rounded-lg transition-all ${
@@ -922,6 +929,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                       >
                         <Trash2 size={12} />
                       </button>
+                    </div>
                     </div>
                     {s.lastMessagePreview && (
                       <p className="text-[11px] text-pc-text-muted truncate mt-0.5 leading-tight">{s.lastMessagePreview.replace(/\s+/g, ' ').slice(0, 80)}</p>

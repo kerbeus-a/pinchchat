@@ -3,8 +3,8 @@
  *
  * Tests for the channel chip in the session sidebar.
  *
- * The chip shows where a session lives (DM / Group / Group topic 30 / Web)
- * without eating the title column. These tests target the rendering layer:
+ * The title gets the complete first row. Context and controls sit below it,
+ * so a Telegram topic name is the strongest label in the list. These tests:
  *   - chip appears only when channel is set
  *   - it is rendered as plain text (React escapes HTML — no XSS)
  *   - overlong channel strings don't break layout (truncation / shrink-0)
@@ -136,7 +136,7 @@ describe('Sidebar channel chip', () => {
     expect(screen.queryAllByLabelText(/^channel:/).length).toBe(3);
   });
 
-  it('absurdly long channel string is rendered but the chip has shrink-0 to protect layout', () => {
+  it('absurdly long channel string is constrained below the title', () => {
     const huge = 'A'.repeat(500);
     render(
       <Sidebar
@@ -146,11 +146,10 @@ describe('Sidebar channel chip', () => {
         ]}
       />,
     );
-    // The chip element has shrink-0 — React renders the text but layout
-    // protection is on the span class. This test guards against a regression
-    // where someone removes the shrink-0 / class and the title gets pushed off.
+    // The metadata chip has its own width cap and cannot consume the title row.
     const chip = screen.getByLabelText(`channel: ${huge}`);
     expect(chip.className).toContain('shrink-0');
+    expect(chip.className).toContain('max-w-[96px]');
     expect(chip.className).toContain('text-[9px]');
   });
 
@@ -171,11 +170,35 @@ describe('Sidebar channel chip', () => {
     );
 
     const title = screen.getByTestId('session-title-s1');
+    const titleRow = screen.getByTestId('session-title-row-s1');
+    const metaRow = screen.getByTestId('session-meta-row-s1');
     const actions = screen.getByTestId('session-actions-s1');
 
     expect(title.textContent).toContain('Long customer planning thread');
     expect(title.className).toContain('font-medium');
-    expect(actions.className).toContain('mt-1');
+    expect(titleRow.contains(screen.getByLabelText('channel: Group topic 30'))).toBe(false);
+    expect(metaRow.contains(screen.getByLabelText('channel: Group topic 30'))).toBe(true);
+    expect(titleRow.contains(actions)).toBe(false);
+    expect(metaRow.contains(actions)).toBe(true);
+    expect(actions.className).toContain('ml-auto');
     expect(actions.className).toContain('justify-end');
+  });
+
+  it('keeps a Telegram topic name authoritative and removes local rename controls', () => {
+    render(
+      <Sidebar
+        {...baseProps()}
+        sessions={[{
+          key: 'topic-session',
+          label: 'First message preview',
+          topicName: 'TasTerra Sales',
+          channel: 'Group topic 27',
+          updatedAt: Date.now(),
+        }]}
+      />,
+    );
+
+    expect(screen.getByTestId('session-title-topic-session').textContent).toBe('TasTerra Sales');
+    expect(screen.queryByLabelText('sidebar.rename')).toBeNull();
   });
 });

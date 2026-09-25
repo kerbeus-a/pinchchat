@@ -13,6 +13,13 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionDisplayName', () => {
+  it('prefers the authoritative Telegram topic name over the session label', () => {
+    expect(sessionDisplayName(makeSession({
+      topicName: 'TasTerra Sales',
+      label: 'First quote request',
+    }))).toBe('TasTerra Sales');
+  });
+
   it('returns label when set', () => {
     expect(sessionDisplayName(makeSession({ label: 'My Task' }))).toBe('My Task');
   });

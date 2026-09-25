@@ -37,6 +37,8 @@ export interface OutgoingAttachment {
 export interface Session {
   key: string;
   label?: string;
+  /** Authoritative Telegram topic title; local session aliases do not override it. */
+  topicName?: string;
   messageCount?: number;
   isActive?: boolean;
   hasUnread?: boolean;

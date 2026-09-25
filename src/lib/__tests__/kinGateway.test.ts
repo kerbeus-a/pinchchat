@@ -104,6 +104,7 @@ describe('KinGatewayClient — sessions.list', () => {
       sessions: [{
         id: 's1',
         title: 'Simple chat',
+        topic_name: 'TasTerra Sales',
         message_count: 2,
         active_context_tokens: 77_190,
         context_window: 258_400,
@@ -116,6 +117,7 @@ describe('KinGatewayClient — sessions.list', () => {
 
     expect(res.sessions[0]).toMatchObject({
       key: 's1',
+      topicName: 'TasTerra Sales',
       totalTokens: 77_190,
       contextTokens: 258_400,
       inputTokens: 1_155_184,
