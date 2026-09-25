@@ -6,7 +6,7 @@ import { getCachedMessages, setCachedMessages, mergeWithCache } from '../lib/mes
 import { extractAgentIdFromKey } from '../lib/sessionName';
 import { extractText, extractThinking, type ChatPayloadMessage } from '../lib/messageExtract';
 import { parseHistoryMessages } from '../lib/historyParser';
-import { isSameMessageHistory } from '../lib/messageHistory';
+import { isSameMessageHistory, mergeHistoryWithOptimistic } from '../lib/messageHistory';
 import { appendBackgroundOutcome } from '../lib/backgroundOutcome';
 import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity, OutgoingAttachment } from '../types';
 
@@ -270,7 +270,10 @@ export function useGateway() {
         }
 
         if (activeSessionRef.current !== sessionKey) return;
-        setMessages(current => background && isSameMessageHistory(current, finalMessages) ? current : finalMessages);
+        setMessages(current => {
+          const reconciled = mergeHistoryWithOptimistic(current, finalMessages);
+          return background && isSameMessageHistory(current, reconciled) ? current : reconciled;
+        });
       }
     } catch {
       // Silently ignore history load failures
@@ -343,7 +346,7 @@ export function useGateway() {
       const evtSession = payload.sessionKey as string | undefined;
 
       if (evtSession) {
-        if (state === 'delta') {
+        if (state === 'accepted' || state === 'delta') {
           setActiveSessions(prev => {
             if (prev.has(evtSession)) return prev;
             const next = new Set(prev);
@@ -372,7 +375,17 @@ export function useGateway() {
         return;
       }
 
-      if (state === 'delta') {
+      if (state === 'accepted') {
+        currentRunIdRef.current = runId;
+        setIsGenerating(true);
+        setMessages(prev => {
+          const index = prev.map((item) => item.role === 'user' && item.sendStatus === 'sending').lastIndexOf(true);
+          if (index < 0) return prev;
+          const next = [...prev];
+          next[index] = { ...next[index], sendStatus: 'sent' };
+          return next;
+        });
+      } else if (state === 'delta') {
         const text = extractText(message);
         const thinking = extractThinking(message);
         currentRunIdRef.current = runId;
@@ -414,16 +427,20 @@ export function useGateway() {
         }
         currentRunIdRef.current = null;
         setIsGenerating(false);
-        loadHistory(activeSessionRef.current);
+        loadHistory(activeSessionRef.current, { background: true });
       } else if (state === 'error') {
         currentRunIdRef.current = null;
         setIsGenerating(false);
         setMessages(prev => {
-          const last = prev[prev.length - 1];
+          const pendingIndex = prev.map((item) => item.role === 'user' && item.sendStatus === 'sending').lastIndexOf(true);
+          const withFailure = pendingIndex < 0 ? prev : prev.map((item, index) => (
+            index === pendingIndex ? { ...item, sendStatus: 'error' as const } : item
+          ));
+          const last = withFailure[withFailure.length - 1];
           if (last && last.role === 'assistant' && last.isStreaming && last.runId === runId) {
-            return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+            return [...withFailure.slice(0, -1), { ...last, isStreaming: false }];
           }
-          return [...prev, {
+          return [...withFailure, {
             id: 'error-' + Date.now(),
             role: 'assistant' as const,
             content: `Error: ${errorMessage || 'unknown error'}`,
@@ -499,8 +516,6 @@ export function useGateway() {
         idempotencyKey: genIdempotencyKey(),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
-      // Mark as sent
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sendStatus: 'sent' as const } : m));
     } catch {
       // Mark as error and stop generating
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sendStatus: 'error' as const } : m));

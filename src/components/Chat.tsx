@@ -216,6 +216,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
   }, [messages]);
 
   const showTyping = isGenerating && !hasStreamedText(messages);
+  const latestUserSendStatus = [...messages].reverse().find((message) => message.role === 'user')?.sendStatus;
   const sessionAgentId = sessionKey?.match(/^agent:([^:]+):/)?.[1];
   const welcomeTitle = agentName || sessionAgentId || t('chat.welcome');
 
@@ -362,7 +363,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
                 </div>
             );
           })}
-          {showTyping && <TypingIndicator />}
+          {showTyping && <TypingIndicator acknowledged={latestUserSendStatus !== 'sending'} />}
           <div ref={bottomRef} />
         </div>
         {/* Bookmarks panel */}

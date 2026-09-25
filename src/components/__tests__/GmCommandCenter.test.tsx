@@ -211,7 +211,7 @@ describe('GmCommandCenter', () => {
       },
       {
         id: 'finish-1', task_id: 't1', type: 'task.run.finished', summary: 'work invocation returned', created_at: '2026-07-28T10:03:00Z',
-        payload: { id: 'run-1', actualRunner: 'qwen', actualModel: 'qwen', usage: { inputTokens: 12400, outputTokens: 820 }, toolNames: ['read_source'] },
+        payload: { id: 'run-1', actualRunner: 'qwen', actualModel: 'qwen3.5-35b-a3b-q4_k_m', usage: { inputTokens: 12400, outputTokens: 820 }, toolNames: ['read_source'] },
       },
     ];
     const send = vi.fn()
@@ -228,7 +228,8 @@ describe('GmCommandCenter', () => {
     render(<GmCommandCenter send={send} />);
 
     expect(await screen.findByText('kin / analyst (running)')).toBeDefined();
-    expect(screen.getAllByText('Qwen / llama.cpp').length).toBeGreaterThan(0);
+    expect(screen.getByText('llama.cpp (LAN)')).toBeDefined();
+    expect(screen.getByText('qwen3.5-35b-a3b-q4_k_m')).toBeDefined();
     expect(await screen.findByText('32,768 tokens configured')).toBeDefined();
     expect(screen.getByText('12,400')).toBeDefined();
 

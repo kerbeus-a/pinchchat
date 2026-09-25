@@ -364,8 +364,6 @@ export function GmCommandCenter({
     ?? selectedTask?.runner
     ?? null;
   const actualModel = stringValue(selectedRunFinished?.payload?.actualModel)
-    ?? selectedContext?.model
-    ?? selectedTask?.execution?.policy.model
     ?? null;
   const runningTasks = detail?.tasks.filter((task) => task.status === 'running').length ?? 0;
   const queuedTasks = detail?.tasks.filter((task) => task.status === 'queued').length ?? 0;
@@ -664,7 +662,7 @@ export function GmCommandCenter({
                             {task.execution?.projectId ?? 'One-off task'} / {task.execution?.role ?? 'worker'} / attempt {task.attempt}
                           </p>
                           <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
-                            {modelLabel(task.execution?.policy.model ?? null, task.execution?.policy.runner ?? task.runner)}
+                            {modelLabel(task.execution?.policy.model ?? null)}
                           </p>
                           {(task.execution?.dependsOnTaskIds?.length ?? 0) > 0 && (
                             <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
@@ -763,7 +761,7 @@ export function GmCommandCenter({
                             : selectedTask.execution?.projectId ? 'Persistent worker not launched yet' : 'Ephemeral run'} />
                           <DetailRow label="Session" value={selectedWorker?.sessionId ? shortId(selectedWorker.sessionId) : 'No reusable session'} mono />
                           <DetailRow label="Engine" value={runnerLabel(actualRunner)} />
-                          <DetailRow label="Model" value={modelLabel(actualModel, actualRunner)} />
+                          <DetailRow label="Model" value={modelLabel(actualModel)} />
                           <DetailRow label="Dispatch context" value={selectedContext
                             ? `${formatNumber(selectedContext.contextChars)} characters`
                             : historicalInstruction ? 'Historical snapshot available' : 'Not dispatched yet'} />
@@ -796,7 +794,7 @@ export function GmCommandCenter({
                               >
                                 {contexts.map((context) => (
                                   <option key={context.runId} value={context.runId}>
-                                    {context.phase} / {modelLabel(context.model, context.runner)} / {formatNumber(context.contextChars)} chars
+                                    {context.phase} / {modelLabel(context.model)} / {formatNumber(context.contextChars)} chars
                                   </option>
                                 ))}
                               </select>
@@ -806,7 +804,7 @@ export function GmCommandCenter({
                             <>
                               <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-pc-text-muted">
                                 <span>{selectedContext.phase} context</span>
-                                <span>{modelLabel(selectedContext.model, selectedContext.runner)}</span>
+                                <span>{modelLabel(selectedContext.model)}</span>
                                 <span>{formatNumber(selectedContext.contextChars)} characters</span>
                                 {numberValue(usage?.inputTokens) !== null && <span>{formatNumber(numberValue(usage?.inputTokens)!)} input tokens</span>}
                               </div>
@@ -980,13 +978,13 @@ function runnerLabel(runner: string | null): string {
   return runner ?? 'Not launched yet';
 }
 
-function modelLabel(model: string | null, runner: string | null): string {
-  if (model === 'qwen' || runner === 'qwen') return 'Qwen / llama.cpp';
-  if (model === 'gpt' || runner === 'codex') return 'GPT / Codex';
+function modelLabel(model: string | null): string {
+  if (model === 'qwen') return 'Qwen / llama.cpp';
+  if (model === 'gpt') return 'GPT / Codex';
   if (model === 'fable' || model === 'opus' || model === 'sonnet') {
     return `${model[0]!.toUpperCase()}${model.slice(1)} / Claude`;
   }
-  return model ?? runnerLabel(runner);
+  return model ?? 'Not recorded';
 }
 
 function StatusPill({ status }: { status: string }) {

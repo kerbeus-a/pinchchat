@@ -255,17 +255,22 @@ describe('KinGatewayClient — streaming', () => {
       { type: 'final', content: 'Hello' },
     ]));
 
+    const states: string[] = [];
     const deltas: string[] = [];
     client.onEvent((event, payload) => {
-      if (event !== 'chat' || payload.state !== 'delta') return;
+      if (event !== 'chat') return;
+      states.push(String(payload.state));
+      if (payload.state !== 'delta') return;
       const message = payload.message as { content?: Array<{ text?: string }> } | undefined;
       deltas.push(message?.content?.[0]?.text ?? '');
     });
 
-    await client.send('chat.send', { sessionKey: 's1', message: 'hi' });
+    const sent = await client.send('chat.send', { sessionKey: 's1', message: 'hi' });
+    expect(typeof sent?.runId).toBe('string');
 
     await vi.waitFor(() => {
       expect(deltas).toEqual(['Hel', 'Hello']);
     });
+    expect(states).toEqual(['accepted', 'delta', 'delta', 'final']);
   });
 });

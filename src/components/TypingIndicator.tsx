@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bot } from 'lucide-react';
-import { useT } from '../hooks/useLocale';
 
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -9,10 +8,12 @@ function formatElapsed(seconds: number): string {
   return `${m}m ${s.toString().padStart(2, '0')}s`;
 }
 
-export function TypingIndicator() {
-  const t = useT();
+export function TypingIndicator({ acknowledged = true }: { acknowledged?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef(0);
+  const label = acknowledged
+    ? 'Kin received your message and is working…'
+    : 'Sending to Kin…';
 
   useEffect(() => {
     startRef.current = Date.now();
@@ -23,7 +24,7 @@ export function TypingIndicator() {
   }, []);
 
   return (
-    <div role="status" aria-label={t('chat.thinking')} className="animate-fade-in flex items-start gap-3 px-4 py-3">
+    <div role="status" aria-label={label} className="animate-fade-in flex items-start gap-3 px-4 py-3">
       <div className="shrink-0 flex h-9 w-9 items-center justify-center rounded-2xl border border-pc-border-strong bg-pc-input/60">
         <Bot className="h-4 w-4 text-pc-accent-light" />
       </div>
@@ -32,7 +33,7 @@ export function TypingIndicator() {
           <span className="bounce-dot h-2 w-2 rounded-full bg-gradient-to-r from-cyan-300/80 to-violet-400/80" />
           <span className="bounce-dot h-2 w-2 rounded-full bg-gradient-to-r from-cyan-300/80 to-violet-400/80" />
           <span className="bounce-dot h-2 w-2 rounded-full bg-gradient-to-r from-cyan-300/80 to-violet-400/80" />
-          <span className="ml-2 text-xs text-pc-text-secondary">{t('chat.thinking')}</span>
+          <span className="ml-2 text-xs text-pc-text-secondary">{label}</span>
           {elapsed >= 2 && (
             <span className="text-[10px] text-pc-text-muted tabular-nums ml-1">{formatElapsed(elapsed)}</span>
           )}

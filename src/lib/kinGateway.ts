@@ -302,7 +302,7 @@ export class KinGatewayClient {
 
         // Fire off SSE request, emit events as they come
         this.streamChat(sessionKey, message, runId, this.abortController.signal, attachments);
-        return {};
+        return { runId };
       }
 
       case 'sessions.create': {
@@ -596,9 +596,11 @@ export class KinGatewayClient {
       });
 
       if (!res.ok || !res.body) {
-        this.emit('chat', { state: 'error', errorMessage: `HTTP ${res.status}`, sessionKey });
+        this.emit('chat', { state: 'error', errorMessage: `HTTP ${res.status}`, runId, sessionKey });
         return;
       }
+
+      this.emit('chat', { state: 'accepted', runId, sessionKey });
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -651,17 +653,17 @@ export class KinGatewayClient {
               data: { phase: 'result', result: String(evt.content || ''), toolCallId: String(evt.toolCallId || '') },
             });
           } else if (evt.type === 'final') {
-            this.emit('chat', { state: 'final', sessionKey });
+            this.emit('chat', { state: 'final', runId, sessionKey });
           } else if (evt.type === 'error') {
-            this.emit('chat', { state: 'error', errorMessage: String(evt.message || ''), sessionKey });
+            this.emit('chat', { state: 'error', errorMessage: String(evt.message || ''), runId, sessionKey });
           }
         }
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
-        this.emit('chat', { state: 'aborted', sessionKey });
+        this.emit('chat', { state: 'aborted', runId, sessionKey });
       } else {
-        this.emit('chat', { state: 'error', errorMessage: String(err), sessionKey });
+        this.emit('chat', { state: 'error', errorMessage: String(err), runId, sessionKey });
       }
     }
   }
