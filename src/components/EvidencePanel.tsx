@@ -18,6 +18,14 @@ function formatTokens(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
+function channelLabel(channel?: string): string {
+  if (!channel) return 'Not reported';
+  if (/^group topic\b/i.test(channel)) return 'Telegram topic';
+  if (channel.toLowerCase() === 'dm') return 'Direct chat';
+  if (channel.toLowerCase() === 'web') return 'Web chat';
+  return channel;
+}
+
 function ContextRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border-b border-pc-border py-3 last:border-b-0">
@@ -49,7 +57,7 @@ function ContextView({ session, scope, workspaceLabel, sources }: {
         <ContextRow label="Conversation">
           {session ? sessionDisplayName(session) : 'Current conversation'}
         </ContextRow>
-        <ContextRow label="Channel">{session?.channel || 'Not reported'}</ContextRow>
+        <ContextRow label="Channel">{channelLabel(session?.channel)}</ContextRow>
         <ContextRow label="Workspace">{workspaceLabel}</ContextRow>
         <ContextRow label="Mode">{scope.mode === 'query' ? 'Query' : 'Action'}</ContextRow>
         <ContextRow label="Agent">{session?.agentId || 'Main agent'}</ContextRow>

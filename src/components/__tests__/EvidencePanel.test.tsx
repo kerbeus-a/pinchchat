@@ -22,7 +22,7 @@ describe('EvidencePanel', () => {
     const refresh = vi.fn();
     render(<EvidencePanel
       open
-      session={{ key: 'topic-41', topicName: 'Invoices', channel: 'Telegram', agentId: 'main', model: 'Qwen3.5', messageCount: 18, totalTokens: 12000, contextTokens: 131072 }}
+      session={{ key: 'topic-41', topicName: 'Invoices', channel: 'Group topic 4346', agentId: 'main', model: 'Qwen3.5', messageCount: 18, totalTokens: 12000, contextTokens: 131072 }}
       scope={{ workspaceId: 'tasterra', mode: 'query', sourceIds: [], persisted: true }}
       workspaceLabel="TasTerra"
       sources={[]}
@@ -33,6 +33,8 @@ describe('EvidencePanel', () => {
     />);
 
     expect(screen.getByText('Invoices')).toBeTruthy();
+    expect(screen.getByText('Telegram topic')).toBeTruthy();
+    expect(screen.queryByText('Group topic 4346')).toBeNull();
     expect(screen.getByText('Qwen3.5')).toBeTruthy();
     expect(screen.getByText('12,000 / 131,072 tokens')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
