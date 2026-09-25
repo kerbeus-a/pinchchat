@@ -1,14 +1,93 @@
-import { Activity, ExternalLink, FileSearch, ListChecks, RefreshCw, X } from 'lucide-react';
+import { Activity, ExternalLink, FileSearch, Layers3, ListChecks, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
-import type { EvidenceReference, WorkspaceSessionScope } from '../lib/commandCenter';
+import type { ReactNode } from 'react';
+import type { EvidenceReference, SourceConnection, WorkspaceSessionScope } from '../lib/commandCenter';
+import { sessionDisplayName } from '../lib/sessionName';
+import type { Session } from '../types';
 
-type EvidenceTab = 'evidence' | 'activity' | 'proposals';
+type EvidenceTab = 'context' | 'evidence' | 'activity' | 'proposals';
 
 const TABS: Array<{ id: EvidenceTab; label: string; icon: typeof FileSearch }> = [
+  { id: 'context', label: 'Context', icon: Layers3 },
   { id: 'evidence', label: 'Evidence', icon: FileSearch },
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'proposals', label: 'Proposals', icon: ListChecks },
 ];
+
+function formatTokens(value: number): string {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+}
+
+function ContextRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border-b border-pc-border py-3 last:border-b-0">
+      <dt className="text-[11px] text-pc-text-muted">{label}</dt>
+      <dd className="min-w-0 break-words text-xs leading-5 text-pc-text-secondary">{children}</dd>
+    </div>
+  );
+}
+
+function ContextView({ session, scope, workspaceLabel, sources }: {
+  session?: Session;
+  scope: WorkspaceSessionScope;
+  workspaceLabel: string;
+  sources: SourceConnection[];
+}) {
+  const enabledSources = sources.filter((source) => source.enabled);
+  const scopedSources = scope.sourceIds.length === 0
+    ? enabledSources
+    : enabledSources.filter((source) => scope.sourceIds.includes(source.id));
+  const usedTokens = session?.totalTokens;
+  const contextWindow = session?.contextTokens;
+  const contextPercent = usedTokens !== undefined && contextWindow !== undefined && contextWindow > 0
+    ? Math.min(100, Math.round((usedTokens / contextWindow) * 100))
+    : null;
+
+  return (
+    <div aria-label="Session context details">
+      <dl>
+        <ContextRow label="Conversation">
+          {session ? sessionDisplayName(session) : 'Current conversation'}
+        </ContextRow>
+        <ContextRow label="Channel">{session?.channel || 'Not reported'}</ContextRow>
+        <ContextRow label="Workspace">{workspaceLabel}</ContextRow>
+        <ContextRow label="Mode">{scope.mode === 'query' ? 'Query' : 'Action'}</ContextRow>
+        <ContextRow label="Agent">{session?.agentId || 'Main agent'}</ContextRow>
+        <ContextRow label="Model">{session?.model || 'Not reported by runner'}</ContextRow>
+        <ContextRow label="Messages">
+          {session?.messageCount !== undefined ? formatTokens(session.messageCount) : 'Not reported'}
+        </ContextRow>
+        <ContextRow label="Context use">
+          {usedTokens !== undefined && contextWindow !== undefined && contextPercent !== null ? (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span>{formatTokens(usedTokens)} / {formatTokens(contextWindow)} tokens</span>
+                <span className="text-pc-text-muted">{contextPercent}%</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-[var(--pc-bg-elevated)]">
+                <div className="h-full bg-pc-accent" style={{ width: `${contextPercent}%` }} />
+              </div>
+            </div>
+          ) : 'Not reported by runner'}
+        </ContextRow>
+        <ContextRow label="Sources">
+          {scopedSources.length > 0 ? (
+            <div className="space-y-1.5">
+              {scopedSources.map((source) => (
+                <div key={source.id} className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">{source.displayName}</span>
+                  <span className={`shrink-0 text-[10px] capitalize ${source.health.status === 'healthy' ? 'text-emerald-400' : source.health.status === 'offline' ? 'text-red-400' : 'text-amber-400'}`}>
+                    {source.health.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : 'No connected sources'}
+        </ContextRow>
+      </dl>
+    </div>
+  );
+}
 
 function EmptyState({ icon: Icon, title }: { icon: typeof FileSearch; title: string }) {
   return (
@@ -61,16 +140,18 @@ function EvidenceList({ evidence }: { evidence: EvidenceReference[] }) {
   );
 }
 
-export function EvidencePanel({ open, scope, workspaceLabel, evidence, loading, onRefresh, onClose }: {
+export function EvidencePanel({ open, session, scope, workspaceLabel, sources, evidence, loading, onRefresh, onClose }: {
   open: boolean;
+  session?: Session;
   scope: WorkspaceSessionScope;
   workspaceLabel: string;
+  sources: SourceConnection[];
   evidence: EvidenceReference[];
   loading: boolean;
   onRefresh: () => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<EvidenceTab>('evidence');
+  const [tab, setTab] = useState<EvidenceTab>('context');
   if (!open) return null;
 
   return (
@@ -89,7 +170,7 @@ export function EvidencePanel({ open, scope, workspaceLabel, evidence, loading, 
             <X size={16} />
           </button>
         </div>
-        <div className="grid grid-cols-3 border-b border-pc-border">
+        <div className="grid grid-cols-4 border-b border-pc-border">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" onClick={() => setTab(id)} className={`h-11 flex items-center justify-center gap-1.5 border-b-2 text-[11px] transition-colors ${tab === id ? 'border-pc-accent text-pc-accent-light' : 'border-transparent text-pc-text-muted hover:text-pc-text'}`} aria-pressed={tab === id}>
               <Icon size={13} />
@@ -98,6 +179,7 @@ export function EvidencePanel({ open, scope, workspaceLabel, evidence, loading, 
           ))}
         </div>
         <div className="flex-1 overflow-y-auto p-5">
+          {tab === 'context' && <ContextView session={session} scope={scope} workspaceLabel={workspaceLabel} sources={sources} />}
           {tab === 'evidence' && (loading && evidence.length === 0
             ? <EmptyState icon={RefreshCw} title="Loading evidence" />
             : <EvidenceList evidence={evidence} />)}

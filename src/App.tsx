@@ -272,6 +272,7 @@ export default function App() {
 
   const workspaceLabel = commandCenter.workspaces.find((workspace) => workspace.id === commandCenter.scope.workspaceId)?.label
     ?? commandCenter.scope.workspaceId;
+  const activeSessionData = sessions.find((session) => session.key === activeSession);
 
   return (
     <ToolCollapseProvider>
@@ -372,8 +373,10 @@ export default function App() {
         </div>
         <EvidencePanel
           open={evidenceOpen}
+          session={activeSessionData}
           scope={commandCenter.scope}
           workspaceLabel={workspaceLabel}
+          sources={commandCenter.sources}
           evidence={commandCenter.evidence}
           loading={commandCenter.evidenceLoading}
           onRefresh={() => { void commandCenter.refreshEvidence(); }}

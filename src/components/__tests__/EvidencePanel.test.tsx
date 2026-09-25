@@ -22,14 +22,20 @@ describe('EvidencePanel', () => {
     const refresh = vi.fn();
     render(<EvidencePanel
       open
+      session={{ key: 'topic-41', topicName: 'Invoices', channel: 'Telegram', agentId: 'main', model: 'Qwen3.5', messageCount: 18, totalTokens: 12000, contextTokens: 131072 }}
       scope={{ workspaceId: 'tasterra', mode: 'query', sourceIds: [], persisted: true }}
       workspaceLabel="TasTerra"
+      sources={[]}
       evidence={evidence}
       loading={false}
       onRefresh={refresh}
       onClose={vi.fn()}
     />);
 
+    expect(screen.getByText('Invoices')).toBeTruthy();
+    expect(screen.getByText('Qwen3.5')).toBeTruthy();
+    expect(screen.getByText('12,000 / 131,072 tokens')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
     expect(screen.getByText('BILL/2026/0041')).toBeTruthy();
     expect(screen.getByText('Ivan Mining | not_paid | 1200 | USD')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open in source' }).getAttribute('href')).toBe(
