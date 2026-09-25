@@ -527,39 +527,10 @@ export function GmCommandCenter({
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
               <section className="min-w-0 space-y-4">
                 <div className="rounded-lg border border-pc-border bg-[var(--pc-bg-surface)] p-4">
-                  <div className="flex flex-wrap items-start gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <StatusPill status={mission.status} />
-                        <span className="text-xs text-pc-text-faint">{relativeTime(new Date(mission.updated_at).getTime())}</span>
-                      </div>
-                      <h2 className="text-lg font-semibold text-pc-text">{mission.title}</h2>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-pc-text-secondary">{mission.goal}</p>
-                      {sourceContext && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-pc-text-muted">
-                          <Link size={13} aria-hidden="true" />
-                          <span>{sourceContext.kind === 'web_session' ? 'Source: web session' : 'Source: Telegram GM topic'}</span>
-                          {sourceContext.kind === 'web_session' && onOpenSourceSession && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenSourceSession(sourceContext.sessionId)}
-                              className="inline-flex h-6 w-6 items-center justify-center text-pc-text-secondary hover:text-pc-text"
-                              aria-label="Open source session"
-                              title="Open source session"
-                            >
-                              <CornerUpLeft size={14} />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {completionReviewPending && (
-                        <p className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-300">Awaiting completion review</p>
-                      )}
-                      {completionReviewAccepted && (
-                        <p className="mt-3 text-sm font-medium text-emerald-600 dark:text-emerald-300">Completion accepted</p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill status={mission.status} />
+                    <span className="text-xs text-pc-text-faint">{relativeTime(new Date(mission.updated_at).getTime())}</span>
+                    <div className="ml-auto flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => { void missionAction('gm.mission.accept_completion', 'Completion accepted by operator'); }}
@@ -611,6 +582,34 @@ export function GmCommandCenter({
                         <span>Cancel</span>
                       </button>
                     </div>
+                  </div>
+
+                  <div className="mt-3 min-w-0">
+                    <h2 className="text-lg font-semibold leading-7 text-pc-text">{mission.title}</h2>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-pc-text-secondary">{mission.goal}</p>
+                    {sourceContext && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-pc-text-muted">
+                        <Link size={13} aria-hidden="true" />
+                        <span>{sourceContext.kind === 'web_session' ? 'Source: web session' : 'Source: Telegram GM topic'}</span>
+                        {sourceContext.kind === 'web_session' && onOpenSourceSession && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSourceSession(sourceContext.sessionId)}
+                            className="inline-flex h-6 w-6 items-center justify-center text-pc-text-secondary hover:text-pc-text"
+                            aria-label="Open source session"
+                            title="Open source session"
+                          >
+                            <CornerUpLeft size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {completionReviewPending && (
+                      <p className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-300">Awaiting completion review</p>
+                    )}
+                    {completionReviewAccepted && (
+                      <p className="mt-3 text-sm font-medium text-emerald-600 dark:text-emerald-300">Completion accepted</p>
+                    )}
                   </div>
 
                   {mission.acceptance_criteria.length > 0 && (

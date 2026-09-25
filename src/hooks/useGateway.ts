@@ -6,6 +6,7 @@ import { getCachedMessages, setCachedMessages, mergeWithCache } from '../lib/mes
 import { extractAgentIdFromKey } from '../lib/sessionName';
 import { extractText, extractThinking, type ChatPayloadMessage } from '../lib/messageExtract';
 import { parseHistoryMessages } from '../lib/historyParser';
+import { isSameMessageHistory } from '../lib/messageHistory';
 import { appendBackgroundOutcome } from '../lib/backgroundOutcome';
 import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity, OutgoingAttachment } from '../types';
 
@@ -236,8 +237,9 @@ export function useGateway() {
     }
   }, [getDeletedSessions]);
 
-  const loadHistory = useCallback(async (sessionKey: string) => {
-    setIsLoadingHistory(true);
+  const loadHistory = useCallback(async (sessionKey: string, options: { background?: boolean } = {}) => {
+    const background = options.background === true;
+    if (!background) setIsLoadingHistory(true);
     try {
       const res = await clientRef.current?.send('chat.history', { sessionKey, limit: 100 });
       const rawMsgs = res?.messages as Array<Record<string, unknown>> | undefined;
@@ -267,12 +269,13 @@ export function useGateway() {
           setCachedMessages(sessionKey, merged);
         }
 
-        setMessages(finalMessages);
+        if (activeSessionRef.current !== sessionKey) return;
+        setMessages(current => background && isSameMessageHistory(current, finalMessages) ? current : finalMessages);
       }
     } catch {
       // Silently ignore history load failures
     } finally {
-      setIsLoadingHistory(false);
+      if (!background) setIsLoadingHistory(false);
     }
   }, []);
 
@@ -634,7 +637,7 @@ export function useGateway() {
       const key = activeSessionRef.current;
       if (!key) return;
       if (isGenerating) return;
-      loadHistory(key);
+      loadHistory(key, { background: true });
     }, 5000);
     return () => {
       clearInterval(sessionsTimer);

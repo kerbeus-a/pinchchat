@@ -167,10 +167,14 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
     prevMessageCountRef.current = newCount;
 
     if (justFinishedLoading) {
-      // History just loaded — scroll to bottom, don't show indicator
-      scrollToBottom('instant');
-      isNearBottomRef.current = true;
-      setNewMessageCount(0); // eslint-disable-line react-hooks/set-state-in-effect -- intentional: reset after history load
+      // Opening a session starts near the bottom. A refresh that finishes while
+      // the user is reading older messages must preserve that reading position.
+      if (isNearBottomRef.current) {
+        scrollToBottom('instant');
+        setNewMessageCount(0); // eslint-disable-line react-hooks/set-state-in-effect -- intentional: reset after history load
+      } else if (hadNew) {
+        setNewMessageCount(c => c + delta);
+      }
       return;
     }
 
