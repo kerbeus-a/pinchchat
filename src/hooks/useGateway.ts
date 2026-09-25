@@ -529,8 +529,7 @@ export function useGateway() {
     const client = clientRef.current;
     if (!client) return;
 
-    const expectedPrefix = `agent:${agentId}:`;
-    const fallbackKey = `${expectedPrefix}webchat-${Date.now()}`;
+    const fallbackKey = `agent:${agentId}:webchat-${Date.now()}`;
     let nextKey = fallbackKey;
 
     try {
@@ -544,7 +543,7 @@ export function useGateway() {
         || null;
 
       const returnedKey = (fromRoot || fromNested) as string | null;
-      if (returnedKey && returnedKey.startsWith(expectedPrefix)) {
+      if (returnedKey && returnedKey.length <= 200) {
         nextKey = returnedKey;
       }
     } catch (err) {

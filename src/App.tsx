@@ -14,6 +14,12 @@ import { Toast } from './components/Toast';
 import { ToolCollapseProvider } from './contexts/ToolCollapseContext';
 import { SwarmView } from './components/SwarmView';
 import { GmCommandCenter } from './components/GmCommandCenter';
+import { CommandNavigation } from './components/CommandNavigation';
+import { CommandCenterBar } from './components/CommandCenterBar';
+import { EvidencePanel } from './components/EvidencePanel';
+import { ReviewView } from './components/ReviewView';
+import { SourcesView } from './components/SourcesView';
+import { useCommandCenter } from './hooks/useCommandCenter';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from './lib/sessionName';
 import { commandViewFromHash, shouldClearCommandHashForSessionSwitch, shouldReturnToChatOnSessionSwitch, type CommandView } from './lib/commandView';
 import { X } from 'lucide-react';
@@ -119,6 +125,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandView, setCommandView] = useState<CommandView>(() => commandViewFromHash(window.location.hash));
+  const [evidenceOpen, setEvidenceOpen] = useState(() => window.innerWidth >= 1280);
+  const commandCenter = useCommandCenter(send, activeSession, authenticated === true);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
@@ -217,6 +225,15 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handler);
   }, []);
 
+  const navigateCommandView = useCallback((view: Exclude<CommandView, 'swarm'>) => {
+    setCommandView(view);
+    if (view === 'chat') {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`);
+      return;
+    }
+    window.location.hash = view;
+  }, []);
+
   // Still checking stored credentials
   if (authenticated === null) {
     return (
@@ -231,10 +248,14 @@ export default function App() {
     return <LoginScreen onConnect={login} error={connectError} isConnecting={isConnecting} />;
   }
 
+  const workspaceLabel = commandCenter.workspaces.find((workspace) => workspace.id === commandCenter.scope.workspaceId)?.label
+    ?? commandCenter.scope.workspaceId;
+
   return (
     <ToolCollapseProvider>
-    <div className="h-dvh flex overflow-x-hidden bg-[var(--pc-bg-base)] text-pc-text bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.02),transparent_50%),radial_gradient(ellipse_at_bottom_right,rgba(99,102,241,0.04),transparent_50%)]" role="application" aria-label="PinchChat">
+    <div className="h-dvh flex overflow-hidden bg-[var(--pc-bg-base)] pb-14 text-pc-text lg:pb-0" role="application" aria-label="Kin command center">
       <a href="#chat-input" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-pc-accent focus:text-white focus:text-sm focus:font-medium">{t('app.skipToChat')}</a>
+      <CommandNavigation activeView={commandView} onSelect={navigateCommandView} />
       <Sidebar
         sessions={sessions}
         agents={agents}
@@ -253,20 +274,38 @@ export default function App() {
         loadSubagents={loadSubagentsForSession}
         onViewSubagent={setViewingSubagent}
       />
-      <div ref={splitContainerRef} className="flex-1 flex min-w-0" aria-hidden={sidebarOpen ? true : undefined}>
-        {/* Primary pane */}
-        <main className="flex flex-col min-w-0" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'gm' ? 'General Manager' : t('app.mainChat')}>
+      <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen ? true : undefined}>
+        <div ref={splitContainerRef} className="flex min-w-0 flex-1">
+        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'Investigations' : commandView === 'review' ? 'Review' : commandView === 'sources' ? 'Sources' : t('app.mainChat')}>
+          {commandView === 'chat' && (
+            <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
+          )}
+          <CommandCenterBar
+            workspaces={commandCenter.workspaces}
+            scope={commandCenter.scope}
+            sources={commandCenter.sources}
+            health={commandCenter.health}
+            loading={commandCenter.loading}
+            saving={commandCenter.saving}
+            error={commandCenter.error}
+            evidenceOpen={evidenceOpen}
+            onToggleEvidence={() => setEvidenceOpen((open) => !open)}
+            onUpdateScope={commandCenter.updateScope}
+          />
           {commandView === 'swarm' ? (
             <SwarmView />
-          ) : commandView === 'gm' ? (
+          ) : commandView === 'investigations' ? (
             <GmCommandCenter
               send={send}
               sourceSessionId={sessions.find((session) => session.key === activeSession)?.channel === 'Web' ? activeSession : undefined}
               onOpenSourceSession={handleSessionSwitch}
             />
+          ) : commandView === 'review' ? (
+            <ReviewView />
+          ) : commandView === 'sources' ? (
+            <SourcesView sources={commandCenter.sources} loading={commandCenter.loading} error={commandCenter.error} onRefresh={() => { void commandCenter.refreshSources(); }} />
           ) : (
             <>
-              <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
               <ConnectionBanner status={status} />
               <Suspense fallback={<div className="flex-1 flex items-center justify-center text-pc-text-muted"><div className="animate-pulse text-sm">Loading…</div></div>}>
                 <Chat messages={messages} isGenerating={isGenerating} isLoadingHistory={isLoadingHistory} status={status} sessionKey={activeSession} onSend={sendMessage} onNewSession={createNewSession} onAbort={abort} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} />
@@ -304,6 +343,8 @@ export default function App() {
             </section>
           </>
         )}
+        </div>
+        <EvidencePanel open={evidenceOpen} scope={commandCenter.scope} workspaceLabel={workspaceLabel} onClose={() => setEvidenceOpen(false)} />
       </div>
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       {currentApproval && (

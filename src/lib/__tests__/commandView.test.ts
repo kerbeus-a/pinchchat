@@ -4,7 +4,10 @@ import { commandViewFromHash, shouldClearCommandHashForSessionSwitch, shouldRetu
 describe('command view routing', () => {
   it('maps command hashes to command views', () => {
     expect(commandViewFromHash('#swarm')).toBe('swarm');
-    expect(commandViewFromHash('#gm')).toBe('gm');
+    expect(commandViewFromHash('#gm')).toBe('investigations');
+    expect(commandViewFromHash('#investigations')).toBe('investigations');
+    expect(commandViewFromHash('#review')).toBe('review');
+    expect(commandViewFromHash('#sources')).toBe('sources');
     expect(commandViewFromHash('')).toBe('chat');
     expect(commandViewFromHash('#anything-else')).toBe('chat');
   });
@@ -12,13 +15,18 @@ describe('command view routing', () => {
   it('clears command hashes when selecting a normal session', () => {
     expect(shouldClearCommandHashForSessionSwitch('#swarm')).toBe(true);
     expect(shouldClearCommandHashForSessionSwitch('#gm')).toBe(true);
+    expect(shouldClearCommandHashForSessionSwitch('#investigations')).toBe(true);
+    expect(shouldClearCommandHashForSessionSwitch('#review')).toBe(true);
+    expect(shouldClearCommandHashForSessionSwitch('#sources')).toBe(true);
     expect(shouldClearCommandHashForSessionSwitch('')).toBe(false);
     expect(shouldClearCommandHashForSessionSwitch('#session=abc')).toBe(false);
   });
 
   it('returns to chat from command views even after auto-connect strips the hash', () => {
     expect(shouldReturnToChatOnSessionSwitch('swarm', '')).toBe(true);
-    expect(shouldReturnToChatOnSessionSwitch('gm', '')).toBe(true);
+    expect(shouldReturnToChatOnSessionSwitch('investigations', '')).toBe(true);
+    expect(shouldReturnToChatOnSessionSwitch('review', '')).toBe(true);
+    expect(shouldReturnToChatOnSessionSwitch('sources', '')).toBe(true);
     expect(shouldReturnToChatOnSessionSwitch('chat', '')).toBe(false);
   });
 });

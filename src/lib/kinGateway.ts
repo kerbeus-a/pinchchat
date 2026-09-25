@@ -309,6 +309,45 @@ export class KinGatewayClient {
         return { key: data.session_id || data.key, sessionKey: data.session_id || data.key };
       }
 
+      case 'workspaces.list': {
+        const res = await fetch(`${url}/api/workspaces`, { headers: this.authHeaders() });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`workspaces.list: ${res.status}`);
+        if (!res.ok) throw new Error(`workspaces.list: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
+      case 'session.scope.get': {
+        const sessionKey = params.sessionKey as string;
+        const res = await fetch(`${url}/api/sessions/${encodeURIComponent(sessionKey)}/scope`, { headers: this.authHeaders() });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`session.scope.get: ${res.status}`);
+        if (!res.ok) throw new Error(`session.scope.get: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
+      case 'session.scope.set': {
+        const sessionKey = params.sessionKey as string;
+        const res = await fetch(`${url}/api/sessions/${encodeURIComponent(sessionKey)}/scope`, {
+          method: 'PUT',
+          headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            workspace_id: params.workspaceId,
+            mode: params.mode,
+            source_ids: params.sourceIds,
+          }),
+        });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`session.scope.set: ${res.status}`);
+        if (!res.ok) throw new Error(`session.scope.set: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
+      case 'sources.list': {
+        const workspaceId = params.workspaceId as string;
+        const res = await fetch(`${url}/api/sources?workspace=${encodeURIComponent(workspaceId)}`, { headers: this.authHeaders() });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`sources.list: ${res.status}`);
+        if (!res.ok) throw new Error(`sources.list: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
       case 'sessions.delete': {
         const key = params.key as string;
         await fetch(`${url}/api/sessions/${encodeURIComponent(key)}?agent=${agent}`, { method: 'DELETE', headers: this.authHeaders() });

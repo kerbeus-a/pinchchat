@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const appUrl = process.env.KINCHAT_E2E_APP_URL ?? 'http://127.0.0.1:5174/kinchat/';
 const skipWebServer = process.env.KINCHAT_E2E_SKIP_WEBSERVER === '1';
+const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,6 +18,7 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'off',
     video: 'off',
+    launchOptions: chromiumExecutable ? { executablePath: chromiumExecutable } : undefined,
   },
   webServer: skipWebServer
     ? undefined

@@ -167,6 +167,41 @@ describe('KinGatewayClient — agents.list', () => {
   });
 });
 
+describe('KinGatewayClient — command center', () => {
+  it('uses the workspace, scope, and source REST routes', async () => {
+    const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
+    await connectClient(client, 'yuri');
+    vi.restoreAllMocks();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ workspaces: [] }))
+      .mockResolvedValueOnce(jsonResponse({ scope: { workspaceId: 'tasterra', mode: 'query', sourceIds: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ scope: { workspaceId: 'home', mode: 'action', sourceIds: ['mail-home'] } }))
+      .mockResolvedValueOnce(jsonResponse({ sources: [] }));
+
+    await client.send('workspaces.list', {});
+    await client.send('session.scope.get', { sessionKey: 'session/with spaces' });
+    await client.send('session.scope.set', {
+      sessionKey: 's1',
+      workspaceId: 'home',
+      mode: 'action',
+      sourceIds: ['mail-home'],
+    });
+    await client.send('sources.list', { workspaceId: 'other-company' });
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('http://localhost/kinchat/v1/api/workspaces');
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe('http://localhost/kinchat/v1/api/sessions/session%2Fwith%20spaces/scope');
+    expect(fetchSpy.mock.calls[2]?.[0]).toBe('http://localhost/kinchat/v1/api/sessions/s1/scope');
+    const scopeInit = fetchSpy.mock.calls[2]?.[1] as RequestInit;
+    expect(scopeInit.method).toBe('PUT');
+    expect(JSON.parse(String(scopeInit.body))).toEqual({
+      workspace_id: 'home',
+      mode: 'action',
+      source_ids: ['mail-home'],
+    });
+    expect(fetchSpy.mock.calls[3]?.[0]).toBe('http://localhost/kinchat/v1/api/sources?workspace=other-company');
+  });
+});
+
 describe('KinGatewayClient — streaming', () => {
   it('posts chat attachments as multipart form data', async () => {
     const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
