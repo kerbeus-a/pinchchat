@@ -148,8 +148,20 @@ function FilterChipIcon({ cat, size = 12 }: { cat: string; size?: number }) {
     case 'agent': return <Bot size={size} />;
     case 'discord': return <MessageSquare size={size} />;
     case 'telegram': return <MessageSquare size={size} />;
+    case 'direct': return <MessageSquare size={size} />;
+    case 'telegram-group': return <MessageSquare size={size} />;
+    case 'telegram-topic': return <MessageSquare size={size} />;
     default: return <Globe size={size} />;
   }
+}
+
+function normalizeStoredChannelFilter(value: string | null): string | null {
+  if (!value) return null;
+  if (value === 'dm') return 'direct';
+  if (value === 'group') return 'telegram-group';
+  if (value.startsWith('group topic ') || value.startsWith('dm topic ')) return 'telegram-topic';
+  if (value === 'webchat' || value === 'other') return 'web';
+  return value;
 }
 
 export function NewSessionSplitButton({ onNewSession, onNewSessionForAgent, agents }: {
@@ -254,7 +266,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [customOrder, setCustomOrder] = useState<string[]>(getSavedOrder);
   const [channelFilter, setChannelFilter] = useState<string | null>(() => {
-    try { return localStorage.getItem(FILTER_KEY); } catch { return null; }
+    try { return normalizeStoredChannelFilter(localStorage.getItem(FILTER_KEY)); } catch { return null; }
   });
   const [agentFilter, setAgentFilter] = useState<string | null>(() => {
     try { return localStorage.getItem(AGENT_FILTER_KEY); } catch { return null; }

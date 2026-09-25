@@ -45,17 +45,22 @@ describe('sessionCategory', () => {
     expect(sessionCategory(makeSession('abc:sub:789'))).toBe('agent');
   });
 
-  it('uses channel name when not webchat', () => {
+  it('uses channel name for non-Kin channels', () => {
     expect(sessionCategory(makeSession('sess-1', 'Discord'))).toBe('discord');
     expect(sessionCategory(makeSession('sess-2', 'Telegram'))).toBe('telegram');
   });
 
-  it('returns other for webchat channel', () => {
-    expect(sessionCategory(makeSession('sess-1', 'webchat'))).toBe('other');
+  it('groups Kin channels into descriptive filter categories', () => {
+    expect(sessionCategory(makeSession('dm', 'DM'))).toBe('direct');
+    expect(sessionCategory(makeSession('group', 'Group'))).toBe('telegram-group');
+    expect(sessionCategory(makeSession('topic-1', 'Group topic 27'))).toBe('telegram-topic');
+    expect(sessionCategory(makeSession('topic-2', 'DM topic 14'))).toBe('telegram-topic');
+    expect(sessionCategory(makeSession('web-1', 'Web'))).toBe('web');
+    expect(sessionCategory(makeSession('web-2', 'webchat'))).toBe('web');
   });
 
-  it('returns other when no channel', () => {
-    expect(sessionCategory(makeSession('sess-1'))).toBe('other');
+  it('returns web for a session with no channel', () => {
+    expect(sessionCategory(makeSession('sess-1'))).toBe('web');
   });
 });
 
@@ -68,7 +73,7 @@ describe('getAvailableCategories', () => {
       makeSession('d', 'webchat'),
       makeSession('e:cron:3'),
     ];
-    expect(getAvailableCategories(sessions)).toEqual(['agent', 'cron', 'discord', 'other']);
+    expect(getAvailableCategories(sessions)).toEqual(['agent', 'cron', 'discord', 'web']);
   });
 
   it('returns empty for no sessions', () => {
@@ -80,7 +85,10 @@ describe('categoryLabel', () => {
   it('returns known labels', () => {
     expect(categoryLabel('cron')).toBe('Cron');
     expect(categoryLabel('agent')).toBe('Agents');
-    expect(categoryLabel('other')).toBe('Chat');
+    expect(categoryLabel('direct')).toBe('Direct chats');
+    expect(categoryLabel('telegram-group')).toBe('Telegram group');
+    expect(categoryLabel('telegram-topic')).toBe('Telegram topics');
+    expect(categoryLabel('web')).toBe('Web chats');
   });
 
   it('capitalizes unknown categories', () => {

@@ -30,8 +30,12 @@ export function sessionCategory(s: Session): string {
   if (s.key.includes(':cron:')) return 'cron';
   if (s.key.includes(':spawn:') || s.key.includes(':sub:')) return 'agent';
   const ch = s.channel?.toLowerCase();
-  if (ch && ch !== 'webchat') return ch;
-  return 'other';
+  if (ch === 'dm') return 'direct';
+  if (ch === 'group') return 'telegram-group';
+  if (ch?.startsWith('group topic ') || ch?.startsWith('dm topic ')) return 'telegram-topic';
+  if (ch === 'web' || ch === 'webchat') return 'web';
+  if (ch) return ch;
+  return 'web';
 }
 
 /** Get unique categories present in sessions */
@@ -45,7 +49,10 @@ export function getAvailableCategories(sessions: Session[]): string[] {
 export function categoryLabel(cat: string): string {
   if (cat === 'cron') return 'Cron';
   if (cat === 'agent') return 'Agents';
-  if (cat === 'other') return 'Chat';
+  if (cat === 'direct') return 'Direct chats';
+  if (cat === 'telegram-group') return 'Telegram group';
+  if (cat === 'telegram-topic') return 'Telegram topics';
+  if (cat === 'web') return 'Web chats';
   return cat.charAt(0).toUpperCase() + cat.slice(1);
 }
 
