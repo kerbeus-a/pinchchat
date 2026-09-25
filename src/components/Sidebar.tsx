@@ -969,6 +969,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
                     {(() => {
                       if (!s.contextTokens || !s.totalTokens) return null;
                       const pct = Math.min(100, (s.totalTokens / s.contextTokens) * 100);
+                      if (pct < 1) return null;
                       const barOpacity = Math.max(0.35, Math.min(1, pct / 100));
                       const barStyle = { width: `${pct}%`, backgroundColor: `rgba(var(--pc-accent-rgb), ${barOpacity})` };
                       return (

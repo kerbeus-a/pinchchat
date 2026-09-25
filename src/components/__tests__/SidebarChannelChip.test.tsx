@@ -172,6 +172,21 @@ describe('Sidebar channel chip', () => {
       <Sidebar
         {...baseProps()}
         sessions={[{
+          key: 'tiny-usage',
+          label: 'Tiny usage value',
+          totalTokens: 500,
+          contextTokens: 100_000,
+          updatedAt: Date.now(),
+        }]}
+      />,
+    );
+
+    expect(screen.queryByText('1%')).toBeNull();
+
+    rerender(
+      <Sidebar
+        {...baseProps()}
+        sessions={[{
           key: 'real-usage',
           label: 'Real usage data',
           totalTokens: 25_000,
