@@ -228,10 +228,13 @@ describe('Sidebar channel chip', () => {
 
     expect(screen.getByTestId('session-title-current-topic-session')).toBeDefined();
     expect(screen.queryByTestId('session-title-old-topic-session')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Current' }).getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
 
     expect(screen.queryByTestId('session-title-current-topic-session')).toBeNull();
     expect(screen.getByTestId('session-title-old-topic-session').textContent).toBe('TasTerra Sales');
+    expect(screen.getByRole('button', { name: 'Archive' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Active' })).toBeNull();
   });
 });

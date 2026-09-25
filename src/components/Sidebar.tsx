@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Zap, Archive, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { X, Search, Pin, Trash2, Columns2, Clock, Bot, MessageSquare, Globe, Archive, ArrowUpCircle, Download, Pencil, Link, Plus, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import type { Session, SubagentSummary } from '../types';
 import { useT } from '../hooks/useLocale';
 import { SessionIcon } from './SessionIcon';
@@ -157,6 +157,7 @@ function FilterChipIcon({ cat, size = 12 }: { cat: string; size?: number }) {
 
 function normalizeStoredChannelFilter(value: string | null): string | null {
   if (!value) return null;
+  if (value === 'active') return null;
   if (value === 'dm') return 'direct';
   if (value === 'group') return 'telegram-group';
   if (value.startsWith('group topic ') || value.startsWith('dm topic ')) return 'telegram-topic';
@@ -472,6 +473,8 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
   }, []);
 
   const toggleChannelFilter = useCallback((cat: string) => {
+    setFocusIdx(-1);
+    if (listRef.current) listRef.current.scrollTop = 0;
     setChannelFilter(prev => {
       const next = prev === cat ? null : cat;
       try {
@@ -490,9 +493,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
       list = list.filter(s => s.archived);
     } else {
       list = list.filter(s => !s.archived);
-      if (channelFilter === 'active') {
-        list = list.filter(s => s.isActive);
-      } else if (channelFilter) {
+      if (channelFilter) {
         list = list.filter(s => sessionCategory(s) === channelFilter);
       }
     }
@@ -593,29 +594,21 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
             {showSessionFilters && (
               <div className="flex flex-wrap gap-1">
                 <button
-                  onClick={() => { setChannelFilter(null); try { localStorage.removeItem(FILTER_KEY); } catch { /* noop */ } }}
+                  onClick={() => {
+                    setChannelFilter(null);
+                    setFocusIdx(-1);
+                    if (listRef.current) listRef.current.scrollTop = 0;
+                    try { localStorage.removeItem(FILTER_KEY); } catch { /* noop */ }
+                  }}
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
                     !channelFilter
                       ? 'bg-[var(--pc-accent-glow)] text-pc-accent-light border-[var(--pc-accent-dim)]'
                       : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
                   }`}
-                  aria-label={t('sidebar.filterAll')}
+                  aria-label="Current"
                   aria-pressed={!channelFilter}
                 >
-                  {t('sidebar.filterAll')}
-                </button>
-                <button
-                  onClick={() => toggleChannelFilter('active')}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors border ${
-                    channelFilter === 'active'
-                      ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
-                      : 'bg-transparent text-pc-text-muted border-pc-border hover:bg-[var(--pc-hover)] hover:text-pc-text-secondary'
-                  }`}
-                  aria-label={t('sidebar.filterActive')}
-                  aria-pressed={channelFilter === 'active'}
-                >
-                  <Zap size={10} />
-                  {t('sidebar.filterActive')}
+                  Current
                 </button>
                 {hasArchivedSessions && (
                   <button
