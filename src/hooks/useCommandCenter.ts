@@ -15,7 +15,12 @@ import {
   type WorkspaceSessionScope,
 } from '../lib/commandCenter';
 
-export function useCommandCenter(send: CommandCenterSend, sessionKey: string, enabled: boolean) {
+export function useCommandCenter(
+  send: CommandCenterSend,
+  sessionKey: string,
+  enabled: boolean,
+  privateSourceAccess = true,
+) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDefinition[]>([]);
   const [scope, setScope] = useState<WorkspaceSessionScope>({ ...DEFAULT_WORKSPACE_SCOPE });
   const [sources, setSources] = useState<SourceConnection[]>([]);
@@ -61,6 +66,12 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
       const nextScope = parseWorkspaceScope(scopeResponse.scope);
       setWorkspaces(parseWorkspaces(workspaceResponse.workspaces));
       setScope(nextScope);
+      if (!privateSourceAccess) {
+        setSources([]);
+        setEvidence([]);
+        setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
+        return;
+      }
       const [sourceResponse, evidenceResponse] = await Promise.all([
         send('sources.list', { workspaceId: nextScope.workspaceId }),
         send('evidence.list', { sessionKey, workspaceId: nextScope.workspaceId }),
@@ -79,7 +90,7 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
       }
     });
     return () => { cancelled = true; };
-  }, [enabled, send, sessionKey]);
+  }, [enabled, privateSourceAccess, send, sessionKey]);
 
   const updateScope = useCallback(async (next: {
     workspaceId?: WorkspaceId;
@@ -98,6 +109,12 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
       const persisted = parseWorkspaceScope(response.scope);
       setScope(persisted);
       if (persisted.workspaceId !== scope.workspaceId) {
+        if (!privateSourceAccess) {
+          setSources([]);
+          setEvidence([]);
+          setEvidenceContext(`${sessionKey}:${persisted.workspaceId}`);
+          return persisted;
+        }
         try {
           await Promise.all([loadSources(persisted.workspaceId), loadEvidence(persisted.workspaceId)]);
         } catch {
@@ -114,12 +131,18 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     } finally {
       setSaving(false);
     }
-  }, [loadEvidence, loadSources, scope, send, sessionKey]);
+  }, [loadEvidence, loadSources, privateSourceAccess, scope, send, sessionKey]);
 
   const health = useMemo(() => sourceHealthSummary(sources), [sources]);
   const visibleEvidence = evidenceContext === `${sessionKey}:${scope.workspaceId}` ? evidence : [];
 
   const refreshSources = useCallback(async () => {
+    if (!privateSourceAccess) {
+      setSources([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -129,9 +152,16 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     } finally {
       setLoading(false);
     }
-  }, [loadSources, scope.workspaceId]);
+  }, [loadSources, privateSourceAccess, scope.workspaceId]);
 
   const refreshEvidence = useCallback(async () => {
+    if (!privateSourceAccess) {
+      setEvidence([]);
+      setEvidenceContext(`${sessionKey}:${scope.workspaceId}`);
+      setError(null);
+      setEvidenceLoading(false);
+      return;
+    }
     setEvidenceLoading(true);
     try {
       await loadEvidence(scope.workspaceId);
@@ -140,7 +170,7 @@ export function useCommandCenter(send: CommandCenterSend, sessionKey: string, en
     } finally {
       setEvidenceLoading(false);
     }
-  }, [loadEvidence, scope.workspaceId]);
+  }, [loadEvidence, privateSourceAccess, scope.workspaceId, sessionKey]);
 
   return {
     workspaces, scope, sources, evidence: visibleEvidence, health, loading, evidenceLoading, saving, error,

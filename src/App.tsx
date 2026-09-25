@@ -128,7 +128,12 @@ export default function App() {
   const [commandView, setCommandView] = useState<CommandView>(() => commandViewFromHash(window.location.hash));
   const [evidenceOpen, setEvidenceOpen] = useState(() => window.innerWidth >= 1280);
   const [actionUnlockOpen, setActionUnlockOpen] = useState(false);
-  const commandCenter = useCommandCenter(send, activeSession, authenticated === true);
+  const commandCenter = useCommandCenter(
+    send,
+    activeSession,
+    authenticated === true,
+    agentIdentity?.isAdmin === true,
+  );
   const wasGeneratingRef = useRef(isGenerating);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
 
