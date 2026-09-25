@@ -298,7 +298,7 @@ export default function App() {
       />
       <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen ? true : undefined}>
         <div ref={splitContainerRef} className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'Investigations' : commandView === 'review' ? 'Review' : commandView === 'sources' ? 'Sources' : t('app.mainChat')}>
+        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : commandView === 'review' ? 'Review' : commandView === 'sources' ? 'Sources' : t('app.mainChat')}>
           {commandView === 'chat' && (
             <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
           )}

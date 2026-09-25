@@ -54,12 +54,13 @@ describe('GmCommandCenter', () => {
         tasks: [task],
         events: [{ id: 'e1', type: 'mission.created', summary: 'Mission created from command', created_at: '2026-07-28T10:00:00Z' }],
       })
-      .mockResolvedValueOnce({ turns: [] });
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] });
 
     render(<GmCommandCenter send={send} />);
 
     expect(await screen.findByText('Build GM controls')).toBeDefined();
-    expect(await screen.findByText('Durable backend state')).toBeDefined();
+    expect(await screen.findAllByText('Durable backend state')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Pause mission' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Cancel mission' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Retry task' })).toBeDefined();
@@ -72,12 +73,13 @@ describe('GmCommandCenter', () => {
       .mockResolvedValueOnce({ missions: [mission] })
       .mockResolvedValueOnce({ mission, tasks: [task], events: [] })
       .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] })
       .mockResolvedValueOnce({ task })
       .mockResolvedValueOnce({ turns: [{ id: 'turn1', role: 'user', kind: 'steering', content: 'Tighten the tests', created_at: '2026-07-28T10:02:00Z' }] });
 
     render(<GmCommandCenter send={send} />);
 
-    await screen.findByText('Durable backend state');
+    await screen.findAllByText('Durable backend state');
     fireEvent.change(screen.getByLabelText('Task steering note'), {
       target: { value: 'Tighten the tests' },
     });
@@ -145,7 +147,8 @@ describe('GmCommandCenter', () => {
     const send = vi.fn()
       .mockResolvedValueOnce({ missions: [mission] })
       .mockResolvedValueOnce({ mission, tasks: [task], events: [], timeline })
-      .mockResolvedValueOnce({ turns: [] });
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] });
 
     render(<GmCommandCenter send={send} />);
 
@@ -161,10 +164,12 @@ describe('GmCommandCenter', () => {
       .mockResolvedValueOnce({ missions: [pendingMission] })
       .mockResolvedValueOnce({ mission: pendingMission, tasks: [task], events: [] })
       .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] })
       .mockResolvedValueOnce({ ok: true, mission: acceptedMission })
       .mockResolvedValueOnce({ missions: [acceptedMission] })
       .mockResolvedValueOnce({ mission: acceptedMission, tasks: [task], events: [] })
-      .mockResolvedValueOnce({ turns: [] });
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] });
 
     render(<GmCommandCenter send={send} />);
 
@@ -180,17 +185,60 @@ describe('GmCommandCenter', () => {
     });
   });
 
+  it('shows delegation, worker, model, usage, and exact dispatched context', async () => {
+    const dispatch = 'SYSTEM: inspect local records\nTASK: reconcile invoices';
+    const operationalTask = {
+      ...task,
+      status: 'running',
+      execution: { ...task.execution, projectId: 'kin' },
+    };
+    const events = [
+      {
+        id: 'start-1', task_id: 't1', type: 'task.run.started', summary: 'work invocation started', created_at: '2026-07-28T10:02:00Z',
+        payload: { id: 'run-1', maxTurns: 50, capabilities: ['read_source'] },
+      },
+      {
+        id: 'finish-1', task_id: 't1', type: 'task.run.finished', summary: 'work invocation returned', created_at: '2026-07-28T10:03:00Z',
+        payload: { id: 'run-1', actualRunner: 'qwen', actualModel: 'qwen', usage: { inputTokens: 12400, outputTokens: 820 }, toolNames: ['read_source'] },
+      },
+    ];
+    const send = vi.fn()
+      .mockResolvedValueOnce({ missions: [mission] })
+      .mockResolvedValueOnce({
+        mission,
+        tasks: [operationalTask],
+        events,
+        workers: [{ memberId: 'yuri', projectId: 'kin', role: 'analyst', runner: 'qwen', sessionId: 'session-1234567890-abcdef', cwd: '/work/kin', status: 'running', turnsCount: 3, lastRunAt: '2026-07-28T10:02:00Z' }],
+      })
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [{ runId: 'run-1', missionId: 'm1', taskId: 't1', phase: 'work', runner: 'qwen', model: 'qwen', context: dispatch, contextChars: dispatch.length, contextLimitTokens: 32768, createdAt: '2026-07-28T10:02:00Z' }] });
+
+    render(<GmCommandCenter send={send} />);
+
+    expect(await screen.findByText('kin / analyst (running)')).toBeDefined();
+    expect(screen.getAllByText('Qwen / llama.cpp').length).toBeGreaterThan(0);
+    expect(await screen.findByText('32,768 tokens configured')).toBeDefined();
+    expect(screen.getByText('12,400')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Context' }));
+    expect((await screen.findByLabelText('Exact dispatched context')).textContent).toBe(dispatch);
+    fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    expect(await screen.findAllByText('work invocation returned')).toHaveLength(2);
+    expect(send).toHaveBeenCalledWith('gm.task.contexts', { taskId: 't1' });
+  });
+
   it('disables unavailable terminal-state controls and keeps chat navigation visible', async () => {
     const cancelledMission = { ...mission, status: 'cancelled' };
     const cancelledTask = { ...task, status: 'cancelled' };
     const send = vi.fn()
       .mockResolvedValueOnce({ missions: [cancelledMission] })
       .mockResolvedValueOnce({ mission: cancelledMission, tasks: [cancelledTask], events: [] })
-      .mockResolvedValueOnce({ turns: [] });
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] });
 
     render(<GmCommandCenter send={send} />);
 
-    expect(await screen.findByText('Durable backend state')).toBeDefined();
+    expect(await screen.findAllByText('Durable backend state')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Open chat' })).toBeDefined();
     expect((screen.getByRole('button', { name: 'Pause mission' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Resume mission' }) as HTMLButtonElement).disabled).toBe(true);
@@ -218,12 +266,14 @@ describe('GmCommandCenter', () => {
         .mockResolvedValueOnce({ missions: [mission] })
         .mockResolvedValueOnce({ mission, tasks: [runningTask], events: [] })
         .mockResolvedValueOnce({ turns: [{ id: 'i1', role: 'gm', kind: 'instruction', content: 'policy', created_at: '2026-07-28T10:02:00Z' }] })
+        .mockResolvedValueOnce({ contexts: [] })
         .mockResolvedValueOnce({ mission, tasks: [completedTask], events: [] })
         .mockResolvedValueOnce({ turns: [{ id: 'r1', role: 'agent', kind: 'result', content: 'Use the Kin-native project room.', created_at: '2026-07-28T10:03:00Z' }] });
 
       render(<GmCommandCenter send={send} />);
-      expect(await screen.findByText('Durable backend state')).toBeDefined();
+      expect(await screen.findAllByText('Durable backend state')).toHaveLength(2);
       expect(poll).toEqual(expect.any(Function));
+      fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
 
       await act(async () => {
         poll?.();
@@ -231,7 +281,7 @@ describe('GmCommandCenter', () => {
         await Promise.resolve();
       });
 
-      await waitFor(() => expect(send).toHaveBeenCalledTimes(5));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(6));
       expect(await screen.findByText('Use the Kin-native project room.')).toBeDefined();
       expect(send).toHaveBeenCalledWith('gm.mission.detail', { missionId: 'm1' });
       expect(send).toHaveBeenCalledWith('gm.task.turns', { taskId: 't1' });
@@ -246,11 +296,12 @@ describe('GmCommandCenter', () => {
     const send = vi.fn()
       .mockResolvedValueOnce({ missions: [mission] })
       .mockResolvedValueOnce({ mission, tasks: [runningTask], events: [] })
-      .mockResolvedValueOnce({ turns: [] });
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ contexts: [] });
 
     render(<GmCommandCenter send={send} />);
 
-    await screen.findByText('Durable backend state');
+    await screen.findAllByText('Durable backend state');
     expect((screen.getByLabelText('Task steering note') as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Send note' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Cancel task' }) as HTMLButtonElement).disabled).toBe(false);

@@ -446,6 +446,10 @@ export class KinGatewayClient {
         return await this.gmFetch('/api/gm/missions');
       }
 
+      case 'gm.workers.list': {
+        return await this.gmFetch('/api/gm/workers');
+      }
+
       case 'gm.mission.detail': {
         const missionId = encodeURIComponent(String(params.missionId ?? ''));
         return await this.gmFetch(`/api/gm/missions/${missionId}`);
@@ -521,6 +525,11 @@ export class KinGatewayClient {
       case 'gm.task.turns': {
         const taskId = encodeURIComponent(String(params.taskId ?? ''));
         return await this.gmFetch(`/api/gm/tasks/${taskId}/turns`);
+      }
+
+      case 'gm.task.contexts': {
+        const taskId = encodeURIComponent(String(params.taskId ?? ''));
+        return await this.gmFetch(`/api/gm/tasks/${taskId}/contexts`);
       }
 
       case 'gm.task.message': {

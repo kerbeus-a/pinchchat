@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CornerUpLeft, Link, ListChecks, MessageSquare, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
+import { Activity, Bot, CheckCircle2, CornerUpLeft, Cpu, FileText, GitBranch, Link, MessageSquare, Network, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
 import type { JsonPayload } from '../lib/kinGateway';
 import { relativeTime } from '../lib/relativeTime';
 
@@ -37,6 +37,8 @@ interface GmTask {
     role: string;
     risk: string;
     expectedArtifact: string;
+    projectId?: string;
+    dependsOnTaskIds?: string[];
     policy: {
       runner: string;
       model?: string;
@@ -48,10 +50,39 @@ interface GmTask {
 
 interface GmEvent {
   id: string;
+  task_id?: string | null;
   type: string;
   summary: string;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
+
+interface GmWorker {
+  memberId: string;
+  projectId: string;
+  role: string;
+  runner: string;
+  sessionId: string | null;
+  cwd: string | null;
+  status: 'idle' | 'running';
+  turnsCount: number;
+  lastRunAt: string | null;
+}
+
+interface GmRunContext {
+  runId: string;
+  missionId: string;
+  taskId: string;
+  phase: 'work' | 'review';
+  runner: string;
+  model: string | null;
+  context: string;
+  contextChars: number;
+  contextLimitTokens: number | null;
+  createdAt: string;
+}
+
+type InspectorTab = 'overview' | 'context' | 'activity';
 
 interface GmTaskTurn {
   id: string;
@@ -92,6 +123,10 @@ export function GmCommandCenter({
   const [detail, setDetail] = useState<GmDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [turns, setTurns] = useState<GmTaskTurn[]>([]);
+  const [workers, setWorkers] = useState<GmWorker[]>([]);
+  const [contexts, setContexts] = useState<GmRunContext[]>([]);
+  const [selectedContextRunId, setSelectedContextRunId] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('overview');
   const [command, setCommand] = useState('');
   const [criteria, setCriteria] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
@@ -124,12 +159,22 @@ export function GmCommandCenter({
         events: Array.isArray(res.events) ? res.events as unknown as GmEvent[] : [],
         timeline: Array.isArray(res.timeline) ? res.timeline as unknown as GmTimelineItem[] : undefined,
       });
+      if (Array.isArray(res.workers)) setWorkers(res.workers as unknown as GmWorker[]);
     }
   }, [send]);
 
   const loadTurns = useCallback(async (taskId: string) => {
     const res = await send('gm.task.turns', { taskId });
     setTurns(Array.isArray(res.turns) ? res.turns as unknown as GmTaskTurn[] : []);
+  }, [send]);
+
+  const loadContexts = useCallback(async (taskId: string) => {
+    const res = await send('gm.task.contexts', { taskId });
+    const list = Array.isArray(res.contexts) ? res.contexts as unknown as GmRunContext[] : [];
+    setContexts(list);
+    setSelectedContextRunId((current) => current && list.some((context) => context.runId === current)
+      ? current
+      : list[0]?.runId ?? null);
   }, [send]);
 
   useEffect(() => {
@@ -156,10 +201,13 @@ export function GmCommandCenter({
   useEffect(() => {
     if (!selectedTaskId) {
       setTurns([]);
+      setContexts([]);
+      setSelectedContextRunId(null);
       return;
     }
-    loadTurns(selectedTaskId).catch(() => setError('Could not load task turns'));
-  }, [loadTurns, selectedTaskId]);
+    Promise.all([loadTurns(selectedTaskId), loadContexts(selectedTaskId)])
+      .catch(() => setError('Could not load task details'));
+  }, [loadContexts, loadTurns, selectedTaskId]);
 
   const hasActiveTask = detail?.tasks.some((task) => ['queued', 'running'].includes(task.status)) ?? false;
   const pollingTaskId = selectedTaskId ?? detail?.tasks[0]?.id ?? null;
@@ -198,8 +246,8 @@ export function GmCommandCenter({
   const refreshSelected = useCallback(async () => {
     await loadMissions();
     if (selectedMissionId) await loadMissionDetail(selectedMissionId);
-    if (selectedTaskId) await loadTurns(selectedTaskId);
-  }, [loadMissions, loadMissionDetail, loadTurns, selectedMissionId, selectedTaskId]);
+    if (selectedTaskId) await Promise.all([loadTurns(selectedTaskId), loadContexts(selectedTaskId)]);
+  }, [loadContexts, loadMissions, loadMissionDetail, loadTurns, selectedMissionId, selectedTaskId]);
 
   const createMission = useCallback(async () => {
     const trimmed = command.trim();
@@ -267,6 +315,7 @@ export function GmCommandCenter({
       await send('gm.task.message', { taskId: selectedTask.id, message });
       setSteering('');
       await loadTurns(selectedTask.id);
+      setInspectorTab('activity');
     });
   }, [loadTurns, runAction, selectedTask, send, steering]);
 
@@ -295,14 +344,43 @@ export function GmCommandCenter({
   const canRetryTask = selectedTask ? ['queued', 'completed', 'failed', 'blocked'].includes(selectedTask.status) && !completionReviewPending && !completionReviewAccepted : false;
   const canCancelTask = selectedTask ? ['queued', 'running', 'needs_retry', 'blocked', 'failed'].includes(selectedTask.status) : false;
   const canSteerTask = selectedTask ? ['queued', 'blocked', 'failed'].includes(selectedTask.status) && !completionReviewPending && !completionReviewAccepted : false;
+  const selectedContext = contexts.find((context) => context.runId === selectedContextRunId) ?? contexts[0] ?? null;
+  const taskEvents = (detail?.events ?? []).filter((event) => event.task_id === selectedTask?.id);
+  const selectedRunFinished = [...taskEvents].reverse().find((event) => event.type === 'task.run.finished'
+    && (!selectedContext || event.payload?.id === selectedContext.runId));
+  const selectedRunStarted = [...taskEvents].reverse().find((event) => event.type === 'task.run.started'
+    && (!selectedContext || event.payload?.id === selectedContext.runId));
+  const usage = isRecord(selectedRunFinished?.payload?.usage) ? selectedRunFinished.payload.usage : null;
+  const selectedWorker = workers.find((worker) => worker.projectId === selectedTask?.execution?.projectId
+    && worker.role === selectedTask?.execution?.role) ?? null;
+  const actualRunner = stringValue(selectedRunFinished?.payload?.actualRunner)
+    ?? selectedContext?.runner
+    ?? selectedTask?.execution?.policy.runner
+    ?? selectedTask?.runner
+    ?? null;
+  const actualModel = stringValue(selectedRunFinished?.payload?.actualModel)
+    ?? selectedContext?.model
+    ?? selectedTask?.execution?.policy.model
+    ?? null;
+  const runningTasks = detail?.tasks.filter((task) => task.status === 'running').length ?? 0;
+  const queuedTasks = detail?.tasks.filter((task) => task.status === 'queued').length ?? 0;
+  const activeWorkers = workers.filter((worker) => worker.status === 'running').length;
+  const models = new Set((detail?.events ?? [])
+    .filter((event) => event.type === 'task.run.finished')
+    .map((event) => stringValue(event.payload?.actualModel))
+    .filter((model): model is string => Boolean(model)));
+  const historicalInstruction = [...turns].reverse().find((turn) => turn.kind === 'instruction') ?? null;
+  const dependencyNames = (selectedTask?.execution?.dependsOnTaskIds ?? []).map((taskId) => (
+    detail?.tasks.find((task) => task.id === taskId)?.title ?? shortId(taskId)
+  ));
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--pc-bg-base)]">
       <div className="shrink-0 border-b border-pc-border bg-[var(--pc-bg-surface)]/90 px-4 py-3 backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <ListChecks size={17} className="text-pc-accent-light" />
-            <h1 className="text-sm font-semibold text-pc-text">General Manager</h1>
+            <Network size={17} className="text-pc-accent-light" />
+            <h1 className="text-sm font-semibold text-pc-text">GM Activity</h1>
           </div>
           <span className="text-xs text-pc-text-muted">{missions.length} mission{missions.length === 1 ? '' : 's'}</span>
           <button
@@ -399,7 +477,7 @@ export function GmCommandCenter({
           ) : (
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
               <section className="min-w-0 space-y-4">
-                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                <div className="rounded-lg border border-pc-border bg-[var(--pc-bg-surface)] p-4">
                   <div className="flex flex-wrap items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-center gap-2">
@@ -501,33 +579,53 @@ export function GmCommandCenter({
                   )}
                 </div>
 
-                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                <div className="grid grid-cols-2 border border-pc-border bg-[var(--pc-bg-surface)] xl:grid-cols-4">
+                  <Metric label="Running tasks" value={runningTasks} tone={runningTasks > 0 ? 'active' : undefined} />
+                  <Metric label="Queued tasks" value={queuedTasks} />
+                  <Metric label="Active workers" value={`${activeWorkers}/${workers.length}`} tone={activeWorkers > 0 ? 'active' : undefined} />
+                  <Metric label="Models used" value={models.size} />
+                </div>
+
+                <div className="border border-pc-border bg-[var(--pc-bg-surface)]">
                   <div className="mb-3 flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-pc-text">Tasks</h3>
+                    <GitBranch size={15} className="ml-4 mt-4 text-pc-accent-light" />
+                    <h3 className="mt-4 text-sm font-semibold text-pc-text">Delegation tree</h3>
                     <span className="text-xs text-pc-text-muted">{taskCount}</span>
                   </div>
-                  <div className="space-y-2">
+                  <div className="border-t border-pc-border">
                     {(detail?.tasks ?? []).map((task) => (
                       <button
                         key={task.id}
                         type="button"
-                        onClick={() => setSelectedTaskId(task.id)}
-                        className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                        onClick={() => { setSelectedTaskId(task.id); setInspectorTab('overview'); }}
+                        className={`flex w-full items-start gap-3 border-b border-pc-border px-4 py-3 text-left transition-colors last:border-b-0 ${
                           selectedTaskId === task.id
-                            ? 'border-pc-accent/45 bg-pc-accent/10'
-                            : 'border-pc-border hover:bg-[var(--pc-hover)]'
+                            ? 'bg-pc-accent/10'
+                            : 'hover:bg-[var(--pc-hover)]'
                         }`}
                       >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-pc-text">{task.title}</span>
-                          <span className="rounded-full bg-[var(--pc-hover)] px-2 py-0.5 text-[10px] text-pc-text-muted">{task.execution?.policy.model ?? task.execution?.policy.runner ?? task.runner}</span>
-                          {task.execution?.policy.toolMode === 'none' && (
-                            <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] text-emerald-600 dark:text-emerald-300">no tools</span>
-                          )}
-                          <span className="rounded-full bg-[var(--pc-hover)] px-2 py-0.5 text-[10px] text-pc-text-muted">attempt {task.attempt}</span>
-                          <StatusPill status={task.status} />
+                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border border-pc-border bg-[var(--pc-bg-base)] text-pc-text-muted">
+                          <Bot size={14} />
                         </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-pc-text-muted">{task.objective}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-pc-text">{task.title}</span>
+                            <StatusPill status={task.status} />
+                          </div>
+                          <p className="mt-1 truncate text-xs text-pc-text-muted">
+                            {task.execution?.projectId ?? 'One-off task'} / {task.execution?.role ?? 'worker'} / attempt {task.attempt}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
+                            {modelLabel(task.execution?.policy.model ?? null, task.execution?.policy.runner ?? task.runner)}
+                          </p>
+                          {(task.execution?.dependsOnTaskIds?.length ?? 0) > 0 && (
+                            <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
+                              After: {task.execution!.dependsOnTaskIds!.map((taskId) => detail?.tasks.find((candidate) => candidate.id === taskId)?.title ?? shortId(taskId)).join(', ')}
+                            </p>
+                          )}
+                          {task.attempt > 1 && <p className="mt-0.5 text-[11px] text-pc-text-faint">Retry in the same task lineage</p>}
+                          <p className="mt-1 line-clamp-2 text-xs text-pc-text-muted">{task.objective}</p>
+                        </div>
                       </button>
                     ))}
                     {(detail?.tasks ?? []).length === 0 && (
@@ -536,7 +634,7 @@ export function GmCommandCenter({
                   </div>
 
                   <form
-                    className="mt-4 grid gap-2 border-t border-pc-border pt-3 2xl:grid-cols-[0.8fr_1.2fr_auto]"
+                    className="grid gap-2 border-t border-pc-border p-3 2xl:grid-cols-[0.8fr_1.2fr_auto]"
                     onSubmit={(e) => { e.preventDefault(); void createTask(); }}
                   >
                     <input
@@ -565,14 +663,21 @@ export function GmCommandCenter({
               </section>
 
               <aside className="min-w-0 space-y-4">
-                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <MessageSquare size={15} className="text-pc-accent-light" />
-                    <h3 className="text-sm font-semibold text-pc-text">Task Channel</h3>
-                  </div>
+                <div className="border border-pc-border bg-[var(--pc-bg-surface)]">
                   {selectedTask ? (
                     <>
-                      <div className="mb-3 flex flex-wrap gap-2">
+                      <div className="flex items-start gap-3 border-b border-pc-border p-4">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-pc-border bg-[var(--pc-bg-base)] text-pc-accent-light">
+                          <Bot size={16} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-medium uppercase text-pc-text-faint">Task inspector</p>
+                          <h3 className="truncate text-sm font-semibold text-pc-text">{selectedTask.title}</h3>
+                        </div>
+                        <StatusPill status={selectedTask.status} />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 border-b border-pc-border px-4 py-3">
                         <button
                           type="button"
                           onClick={() => { void taskAction('gm.task.retry', 'Retry requested by operator'); }}
@@ -594,22 +699,114 @@ export function GmCommandCenter({
                           <span>Cancel</span>
                         </button>
                       </div>
-                      <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-pc-border bg-[var(--pc-bg-base)] p-2">
-                        {turns.length === 0 ? (
-                          <p className="px-2 py-6 text-center text-sm text-pc-text-muted">No task messages</p>
-                        ) : turns.map((turn) => (
-                          <div key={turn.id} className="rounded-lg bg-[var(--pc-bg-surface)] px-3 py-2">
-                            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-pc-text-faint">
-                              <span>{turn.role}</span>
-                              <span>{turn.kind}</span>
-                              <span className="ml-auto normal-case tracking-normal">{relativeTime(new Date(turn.created_at).getTime())}</span>
-                            </div>
-                            <p className="whitespace-pre-wrap text-sm text-pc-text-secondary">{turn.content}</p>
-                          </div>
-                        ))}
+
+                      <div className="flex border-b border-pc-border" role="tablist" aria-label="Task inspector">
+                        <InspectorTabButton active={inspectorTab === 'overview'} icon={Cpu} label="Overview" onClick={() => setInspectorTab('overview')} />
+                        <InspectorTabButton active={inspectorTab === 'context'} icon={FileText} label="Context" onClick={() => setInspectorTab('context')} />
+                        <InspectorTabButton active={inspectorTab === 'activity'} icon={Activity} label="Activity" onClick={() => setInspectorTab('activity')} />
                       </div>
+
+                      {inspectorTab === 'overview' && (
+                        <div className="divide-y divide-pc-border">
+                          <DetailRow label="Relationship" value={`${mission.title} / ${selectedTask.execution?.projectId ?? 'one-off'} / ${selectedTask.execution?.role ?? 'worker'}`} />
+                          <DetailRow label="Depends on" value={dependencyNames.join(', ') || 'No task dependencies'} />
+                          <DetailRow label="Worker" value={selectedWorker
+                            ? `${selectedWorker.projectId} / ${selectedWorker.role} (${selectedWorker.status})`
+                            : selectedTask.execution?.projectId ? 'Persistent worker not launched yet' : 'Ephemeral run'} />
+                          <DetailRow label="Session" value={selectedWorker?.sessionId ? shortId(selectedWorker.sessionId) : 'No reusable session'} mono />
+                          <DetailRow label="Engine" value={runnerLabel(actualRunner)} />
+                          <DetailRow label="Model" value={modelLabel(actualModel, actualRunner)} />
+                          <DetailRow label="Dispatch context" value={selectedContext
+                            ? `${formatNumber(selectedContext.contextChars)} characters`
+                            : historicalInstruction ? 'Historical snapshot available' : 'Not dispatched yet'} />
+                          <DetailRow label="Context window" value={selectedContext?.contextLimitTokens
+                            ? `${formatNumber(selectedContext.contextLimitTokens)} tokens configured`
+                            : 'Not reported by runner'} />
+                          <DetailRow label="Input tokens" value={numberValue(usage?.inputTokens) === null
+                            ? 'Not reported by runner'
+                            : formatNumber(numberValue(usage?.inputTokens)!)} />
+                          <DetailRow label="Output tokens" value={numberValue(usage?.outputTokens) === null
+                            ? 'Not reported by runner'
+                            : formatNumber(numberValue(usage?.outputTokens)!)} />
+                          <DetailRow label="Tools" value={stringList(selectedRunFinished?.payload?.toolNames).length > 0
+                            ? stringList(selectedRunFinished?.payload?.toolNames).join(', ')
+                            : stringList(selectedRunStarted?.payload?.capabilities).join(', ') || 'None recorded'} />
+                          <DetailRow label="Turn limit" value={numberValue(selectedRunStarted?.payload?.maxTurns)?.toString() ?? 'Not launched yet'} />
+                        </div>
+                      )}
+
+                      {inspectorTab === 'context' && (
+                        <div className="p-4">
+                          {contexts.length > 1 && (
+                            <label className="mb-3 block text-xs text-pc-text-muted">
+                              Dispatch
+                              <select
+                                value={selectedContext?.runId ?? ''}
+                                onChange={(event) => setSelectedContextRunId(event.target.value)}
+                                className="mt-1 block w-full border border-pc-border bg-[var(--pc-bg-base)] px-2 py-1.5 text-xs text-pc-text outline-none"
+                                aria-label="Dispatch context"
+                              >
+                                {contexts.map((context) => (
+                                  <option key={context.runId} value={context.runId}>
+                                    {context.phase} / {modelLabel(context.model, context.runner)} / {formatNumber(context.contextChars)} chars
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {selectedContext ? (
+                            <>
+                              <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-pc-text-muted">
+                                <span>{selectedContext.phase} context</span>
+                                <span>{modelLabel(selectedContext.model, selectedContext.runner)}</span>
+                                <span>{formatNumber(selectedContext.contextChars)} characters</span>
+                                {numberValue(usage?.inputTokens) !== null && <span>{formatNumber(numberValue(usage?.inputTokens)!)} input tokens</span>}
+                              </div>
+                              <pre aria-label="Exact dispatched context" className="max-h-[520px] overflow-auto whitespace-pre-wrap border border-pc-border bg-[var(--pc-bg-base)] p-3 font-mono text-xs leading-5 text-pc-text-secondary">{selectedContext.context}</pre>
+                            </>
+                          ) : historicalInstruction ? (
+                            <>
+                              <p className="mb-2 text-xs text-amber-600 dark:text-amber-300">Historical instruction snapshot. It may have been clipped when originally stored.</p>
+                              <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap border border-pc-border bg-[var(--pc-bg-base)] p-3 font-mono text-xs leading-5 text-pc-text-secondary">{historicalInstruction.content}</pre>
+                            </>
+                          ) : (
+                            <p className="py-8 text-center text-sm text-pc-text-muted">No context has been dispatched.</p>
+                          )}
+                        </div>
+                      )}
+
+                      {inspectorTab === 'activity' && (
+                        <div className="max-h-[520px] overflow-y-auto">
+                          <div className="border-b border-pc-border px-4 py-2 text-[10px] font-medium uppercase text-pc-text-faint">Run events</div>
+                          {taskEvents.length === 0 ? (
+                            <p className="px-4 py-5 text-sm text-pc-text-muted">No run events</p>
+                          ) : taskEvents.map((event) => (
+                            <div key={event.id} className="border-b border-pc-border px-4 py-2.5">
+                              <div className="flex gap-2 text-[10px] text-pc-text-faint">
+                                <span className="font-mono">{event.type}</span>
+                                <span className="ml-auto">{relativeTime(new Date(event.created_at).getTime())}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-pc-text-secondary">{event.summary}</p>
+                            </div>
+                          ))}
+                          <div className="border-b border-pc-border px-4 py-2 text-[10px] font-medium uppercase text-pc-text-faint">Task messages</div>
+                          {turns.length === 0 ? (
+                            <p className="px-4 py-5 text-sm text-pc-text-muted">No task messages</p>
+                          ) : turns.map((turn) => (
+                            <div key={turn.id} className="border-b border-pc-border px-4 py-3 last:border-b-0">
+                              <div className="mb-1 flex items-center gap-2 text-[10px] uppercase text-pc-text-faint">
+                                <span>{turn.role}</span>
+                                <span>{turn.kind}</span>
+                                <span className="ml-auto normal-case">{relativeTime(new Date(turn.created_at).getTime())}</span>
+                              </div>
+                              <p className="whitespace-pre-wrap text-sm text-pc-text-secondary">{turn.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <form
-                        className="mt-3 flex gap-2"
+                        className="flex gap-2 border-t border-pc-border p-3"
                         onSubmit={(e) => { e.preventDefault(); void sendSteering(); }}
                       >
                         <label htmlFor="gm-steering" className="sr-only">Task steering note</label>
@@ -638,7 +835,7 @@ export function GmCommandCenter({
                   )}
                 </div>
 
-                <div className="rounded-xl border border-pc-border bg-[var(--pc-bg-surface)] p-4">
+                <div className="rounded-lg border border-pc-border bg-[var(--pc-bg-surface)] p-4">
                   <h3 className="mb-3 text-sm font-semibold text-pc-text">Mission Timeline</h3>
                   <div className="space-y-2">
                     {timeline.length === 0 ? (
@@ -661,6 +858,87 @@ export function GmCommandCenter({
       </div>
     </div>
   );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string | number; tone?: 'active' }) {
+  return (
+    <div className="border-b border-r border-pc-border px-3 py-2.5 last:border-r-0 xl:border-b-0">
+      <p className="text-[10px] font-medium uppercase text-pc-text-faint">{label}</p>
+      <p className={`mt-0.5 text-lg font-semibold ${tone === 'active' ? 'text-emerald-600 dark:text-emerald-300' : 'text-pc-text'}`}>{value}</p>
+    </div>
+  );
+}
+
+function InspectorTabButton({ active, icon: Icon, label, onClick }: {
+  active: boolean;
+  icon: typeof Cpu;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex flex-1 items-center justify-center gap-1.5 border-r border-pc-border px-2 py-2 text-xs last:border-r-0 ${
+        active ? 'bg-pc-accent/10 text-pc-accent-light' : 'text-pc-text-muted hover:bg-[var(--pc-hover)] hover:text-pc-text'
+      }`}
+    >
+      <Icon size={13} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 px-4 py-2.5 text-xs">
+      <span className="text-pc-text-faint">{label}</span>
+      <span className={`min-w-0 break-words text-pc-text-secondary ${mono ? 'font-mono' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
+
+function shortId(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+}
+
+function runnerLabel(runner: string | null): string {
+  if (runner === 'qwen') return 'llama.cpp (LAN)';
+  if (runner === 'codex') return 'Codex';
+  if (runner === 'claude-cli') return 'Claude CLI';
+  if (runner === 'claude') return 'Claude';
+  return runner ?? 'Not launched yet';
+}
+
+function modelLabel(model: string | null, runner: string | null): string {
+  if (model === 'qwen' || runner === 'qwen') return 'Qwen / llama.cpp';
+  if (model === 'gpt' || runner === 'codex') return 'GPT / Codex';
+  if (model === 'fable' || model === 'opus' || model === 'sonnet') {
+    return `${model[0]!.toUpperCase()}${model.slice(1)} / Claude`;
+  }
+  return model ?? runnerLabel(runner);
 }
 
 function StatusPill({ status }: { status: string }) {
