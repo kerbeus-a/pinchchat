@@ -1,7 +1,6 @@
 import type { JsonPayload } from './kinGateway';
 
-export const WORKSPACE_IDS = ['tasterra', 'other-company', 'home', 'everything'] as const;
-export type WorkspaceId = (typeof WORKSPACE_IDS)[number];
+export type WorkspaceId = string;
 
 export const INTERACTION_MODES = ['query', 'action'] as const;
 export type InteractionMode = (typeof INTERACTION_MODES)[number];
@@ -28,7 +27,7 @@ export interface WorkspaceSessionScope {
 
 export interface SourceConnection {
   id: string;
-  workspaceId: Exclude<WorkspaceId, 'everything'>;
+  workspaceId: WorkspaceId;
   connectorId: string;
   displayName: string;
   capabilities: ConnectorCapability[];
@@ -46,7 +45,7 @@ export interface EvidenceReference {
   citationLabel: string;
   connectorStatus: 'complete' | 'partial' | 'failed';
   id: string;
-  workspaceId: Exclude<WorkspaceId, 'everything'>;
+  workspaceId: WorkspaceId;
   sourceId: string;
   sourceType: 'email' | 'attachment' | 'document' | 'odoo_record' | 'transaction';
   externalId: string;
@@ -55,6 +54,11 @@ export interface EvidenceReference {
   excerpt: string | null;
   deepLink: string | null;
   capturedAt: string;
+}
+
+export interface SessionContextSnapshot {
+  systemPrompt: string;
+  historyMode: 'runner-managed';
 }
 
 export type CommandCenterSend = (method: string, params: JsonPayload) => Promise<JsonPayload>;
@@ -71,7 +75,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isWorkspaceId(value: unknown): value is WorkspaceId {
-  return typeof value === 'string' && (WORKSPACE_IDS as readonly string[]).includes(value);
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,49}$/.test(value) && value !== 'everything';
 }
 
 function isInteractionMode(value: unknown): value is InteractionMode {
@@ -124,7 +128,7 @@ export function parseSourceConnections(value: unknown): SourceConnection[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!isRecord(item) || typeof item.id !== 'string' || !isWorkspaceId(item.workspaceId)
-      || item.workspaceId === 'everything' || typeof item.connectorId !== 'string'
+      || typeof item.connectorId !== 'string'
       || typeof item.displayName !== 'string' || typeof item.enabled !== 'boolean'
       || !isRecord(item.health) || !isHealth(item.health.status)) return [];
     const capabilities = Array.isArray(item.capabilities) ? item.capabilities.filter(isCapability) : [];
@@ -150,7 +154,7 @@ export function parseEvidenceReferences(value: unknown): EvidenceReference[] {
   return value.flatMap((item) => {
     if (!isRecord(item) || typeof item.answerMessageId !== 'string'
       || typeof item.citationLabel !== 'string' || typeof item.id !== 'string'
-      || !isWorkspaceId(item.workspaceId) || item.workspaceId === 'everything'
+      || !isWorkspaceId(item.workspaceId)
       || typeof item.sourceId !== 'string' || typeof item.sourceType !== 'string'
       || !['email', 'attachment', 'document', 'odoo_record', 'transaction'].includes(item.sourceType)
       || typeof item.externalId !== 'string' || typeof item.title !== 'string'
@@ -173,6 +177,12 @@ export function parseEvidenceReferences(value: unknown): EvidenceReference[] {
       capturedAt: item.capturedAt,
     }];
   });
+}
+
+export function parseSessionContext(value: unknown): SessionContextSnapshot | null {
+  if (!isRecord(value) || typeof value.systemPrompt !== 'string'
+    || value.historyMode !== 'runner-managed') return null;
+  return { systemPrompt: value.systemPrompt, historyMode: 'runner-managed' };
 }
 
 export function sourceHealthSummary(sources: SourceConnection[]): {

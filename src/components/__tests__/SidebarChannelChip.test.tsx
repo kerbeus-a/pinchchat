@@ -11,7 +11,7 @@
  *   - empty / whitespace-only channel is treated as absent
  */
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 // matchMedia polyfill — Sidebar module reads it at module scope (PWA install hook).
@@ -57,6 +57,31 @@ function baseProps() {
 }
 
 describe('Sidebar channel chip', () => {
+  beforeEach(() => {
+    localStorage.removeItem('pinchchat-workspace-filter');
+  });
+
+  it('filters conversations by workspace without treating all workspaces as an assignment', () => {
+    render(
+      <Sidebar
+        {...baseProps()}
+        workspaces={[
+          { id: 'tasterra', label: 'TasTerra', description: '', ownerOnly: false },
+          { id: 'home', label: 'Home', description: '', ownerOnly: false },
+        ]}
+        sessions={[
+          { key: 'work', label: 'Work conversation', workspaceId: 'tasterra' },
+          { key: 'house', label: 'Home conversation', workspaceId: 'home' },
+        ]}
+      />,
+    );
+    const filter = screen.getByRole('combobox', { name: 'Workspace filter' });
+    expect(screen.getByRole('option', { name: 'All workspaces' })).toBeDefined();
+    fireEvent.change(filter, { target: { value: 'home' } });
+    expect(screen.getByText('Home conversation')).toBeDefined();
+    expect(screen.queryByText('Work conversation')).toBeNull();
+  });
+
   it('does not render a numbered channel chip for a Telegram topic', () => {
     render(
       <Sidebar

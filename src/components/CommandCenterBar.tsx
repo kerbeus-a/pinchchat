@@ -1,5 +1,6 @@
-import { ChevronDown, Database, LockKeyhole, PanelRight, ShieldCheck } from 'lucide-react';
-import { useRef } from 'react';
+import { ChevronDown, Database, LockKeyhole, PanelRight, Settings2, ShieldCheck } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { WorkspaceManagerDialog } from './WorkspaceManagerDialog';
 import type {
   InteractionMode,
   SourceConnection,
@@ -29,6 +30,8 @@ export function CommandCenterBar({
   onToggleEvidence,
   onRequestActionAccess,
   onUpdateScope,
+  onCreateWorkspace,
+  onUpdateWorkspace,
 }: {
   workspaces: WorkspaceDefinition[];
   scope: WorkspaceSessionScope;
@@ -42,8 +45,11 @@ export function CommandCenterBar({
   onToggleEvidence: () => void;
   onRequestActionAccess: () => void;
   onUpdateScope: (next: { workspaceId?: WorkspaceId; mode?: InteractionMode; sourceIds?: string[] }) => Promise<unknown>;
+  onCreateWorkspace: (input: { label: string; description: string }) => Promise<unknown>;
+  onUpdateWorkspace: (workspaceId: string, input: { label: string; description: string }) => Promise<unknown>;
 }) {
   const sourceMenuRef = useRef<HTMLDetailsElement>(null);
+  const [workspaceManagerOpen, setWorkspaceManagerOpen] = useState(false);
   const disabled = loading || saving;
   const sourceLabel = scope.sourceIds.length === 0
     ? 'All sources'
@@ -52,7 +58,7 @@ export function CommandCenterBar({
   const changeWorkspace = async (workspaceId: WorkspaceId) => {
     if (workspaceId === scope.workspaceId) return;
     const selected = workspaces.find((workspace) => workspace.id === workspaceId);
-    const confirmed = window.confirm(`Move this conversation to ${selected?.label ?? workspaceId}? Existing messages may contain context from ${workspaces.find((workspace) => workspace.id === scope.workspaceId)?.label ?? 'the current workspace'}.`);
+    const confirmed = window.confirm(`Move this conversation to ${selected?.label ?? workspaceId}? The visible chat will stay, but Kin will restart the model context so information from ${workspaces.find((workspace) => workspace.id === scope.workspaceId)?.label ?? 'the current workspace'} is not carried into the new workspace.`);
     if (!confirmed) return;
     await onUpdateScope({ workspaceId });
   };
@@ -81,6 +87,9 @@ export function CommandCenterBar({
           </select>
           <ChevronDown size={13} className="pointer-events-none absolute right-2 top-2.5 text-pc-text-muted" />
         </label>
+        <button type="button" onClick={() => setWorkspaceManagerOpen(true)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-pc-border text-pc-text-muted hover:text-pc-text" aria-label="Manage workspaces" title="Manage workspaces">
+          <Settings2 size={14} />
+        </button>
 
         <div className="flex h-8 shrink-0 rounded-md border border-pc-border bg-[var(--pc-bg-input)] p-0.5" aria-label="Interaction mode">
           {(['query', 'action'] as const).map((mode) => (
@@ -107,7 +116,7 @@ export function CommandCenterBar({
           ))}
         </div>
 
-        <details ref={sourceMenuRef} className="relative">
+        {sources.length > 0 && <details ref={sourceMenuRef} className="relative">
           <summary className="list-none h-8 flex cursor-pointer items-center gap-1.5 rounded-md border border-pc-border bg-[var(--pc-bg-input)] px-2.5 text-xs text-pc-text-secondary hover:text-pc-text [&::-webkit-details-marker]:hidden">
             <Database size={13} />
             <span className="max-w-[110px] truncate">{sourceLabel}</span>
@@ -137,26 +146,33 @@ export function CommandCenterBar({
               </label>
             ))}
           </div>
-        </details>
+        </details>}
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div className="hidden sm:flex h-8 items-center gap-2 px-2 text-xs text-pc-text-muted" title={error ?? health.label}>
+          {sources.length > 0 && <div className="hidden sm:flex h-8 items-center gap-2 px-2 text-xs text-pc-text-muted" title={error ?? health.label}>
             <span className={`h-2 w-2 shrink-0 rounded-full ${error ? 'bg-red-400' : HEALTH_CLASS[health.status]}`} />
             <span className="max-w-[110px] truncate">{error ? 'Scope unavailable' : health.label}</span>
-          </div>
+          </div>}
           {scope.mode === 'query' && <ShieldCheck size={15} className="text-emerald-400" aria-label="Read-only mode" />}
           <button
             type="button"
             onClick={onToggleEvidence}
             className={`h-8 w-8 flex items-center justify-center rounded-md border transition-colors ${evidenceOpen ? 'border-pc-accent text-pc-accent-light bg-[var(--pc-accent-glow)]' : 'border-pc-border text-pc-text-muted hover:text-pc-text'}`}
-            aria-label={evidenceOpen ? 'Close evidence' : 'Open evidence'}
+            aria-label={evidenceOpen ? 'Close session context' : 'Open session context'}
             aria-pressed={evidenceOpen}
-            title="Evidence"
+            title="Session context"
           >
             <PanelRight size={15} />
           </button>
         </div>
       </div>
+      <WorkspaceManagerDialog
+        open={workspaceManagerOpen}
+        workspaces={workspaces}
+        onClose={() => setWorkspaceManagerOpen(false)}
+        onCreate={onCreateWorkspace}
+        onUpdate={onUpdateWorkspace}
+      />
     </div>
   );
 }

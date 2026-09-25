@@ -5,7 +5,7 @@ describe('command center contracts', () => {
   it('parses valid workspace and scope payloads', () => {
     expect(parseWorkspaces([
       { id: 'tasterra', label: 'TasTerra', description: 'Operations', ownerOnly: false },
-      { id: 'invalid', label: 'Bad', description: 'Bad', ownerOnly: false },
+      { id: 'everything', label: 'Bad', description: 'Bad', ownerOnly: false },
     ])).toEqual([{ id: 'tasterra', label: 'TasTerra', description: 'Operations', ownerOnly: false }]);
     expect(parseWorkspaceScope({ workspaceId: 'home', mode: 'action', sourceIds: ['mail-home'], persisted: true })).toEqual({
       workspaceId: 'home',

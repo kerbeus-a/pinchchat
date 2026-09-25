@@ -14,6 +14,7 @@ interface SessionRow {
   preview?: unknown;
   message_count?: unknown;
   model?: unknown;
+  workspace_id?: unknown;
   last_active?: unknown;
   started_at?: unknown;
   active_context_tokens?: unknown;
@@ -234,6 +235,7 @@ export class KinGatewayClient {
           archived: s.archived === true,
           messageCount: typeof s.message_count === 'number' ? s.message_count : undefined,
           model: typeof s.model === 'string' ? s.model : undefined,
+          workspaceId: typeof s.workspace_id === 'string' ? s.workspace_id : undefined,
           updatedAt: typeof s.last_active === 'number'
             ? s.last_active * 1000
             : typeof s.started_at === 'number'
@@ -270,6 +272,7 @@ export class KinGatewayClient {
           archived: s.archived === true,
           messageCount: typeof s.message_count === 'number' ? s.message_count : undefined,
           model: typeof s.model === 'string' ? s.model : undefined,
+          workspaceId: typeof s.workspace_id === 'string' ? s.workspace_id : undefined,
           updatedAt: typeof s.last_active === 'number'
             ? s.last_active * 1000
             : typeof s.started_at === 'number'
@@ -322,6 +325,29 @@ export class KinGatewayClient {
         return await res.json() as JsonPayload;
       }
 
+      case 'workspaces.create': {
+        const res = await fetch(`${url}/api/workspaces`, {
+          method: 'POST',
+          headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ label: params.label, description: params.description }),
+        });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`workspaces.create: ${res.status}`);
+        if (!res.ok) throw new Error(`workspaces.create: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
+      case 'workspaces.update': {
+        const workspaceId = params.workspaceId as string;
+        const res = await fetch(`${url}/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+          method: 'PATCH',
+          headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ label: params.label, description: params.description }),
+        });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`workspaces.update: ${res.status}`);
+        if (!res.ok) throw new Error(`workspaces.update: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
       case 'session.scope.get': {
         const sessionKey = params.sessionKey as string;
         const res = await fetch(`${url}/api/sessions/${encodeURIComponent(sessionKey)}/scope`, { headers: this.authHeaders() });
@@ -339,10 +365,19 @@ export class KinGatewayClient {
             workspace_id: params.workspaceId,
             mode: params.mode,
             source_ids: params.sourceIds,
+            reset_context: params.resetContext === true,
           }),
         });
         if (res.status === 401 || res.status === 403) throw new AuthError(`session.scope.set: ${res.status}`);
         if (!res.ok) throw new Error(`session.scope.set: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
+      case 'session.context.get': {
+        const sessionKey = params.sessionKey as string;
+        const res = await fetch(`${url}/api/sessions/${encodeURIComponent(sessionKey)}/context`, { headers: this.authHeaders() });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`session.context.get: ${res.status}`);
+        if (!res.ok) throw new Error(`session.context.get: HTTP ${res.status}`);
         return await res.json() as JsonPayload;
       }
 

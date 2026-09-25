@@ -52,6 +52,8 @@ export interface Session {
   channel?: string;
   kind?: string;
   model?: string;
+  /** Command Center workspace used as this conversation's privacy boundary. */
+  workspaceId?: string;
   agentId?: string;
   updatedAt?: number;
   lastMessagePreview?: string;

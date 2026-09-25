@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_WORKSPACE_SCOPE,
   parseEvidenceReferences,
+  parseSessionContext,
   parseSourceConnections,
   parseWorkspaces,
   parseWorkspaceScope,
@@ -10,6 +11,7 @@ import {
   type EvidenceReference,
   type InteractionMode,
   type SourceConnection,
+  type SessionContextSnapshot,
   type WorkspaceDefinition,
   type WorkspaceId,
   type WorkspaceSessionScope,
@@ -25,6 +27,7 @@ export function useCommandCenter(
   const [scope, setScope] = useState<WorkspaceSessionScope>({ ...DEFAULT_WORKSPACE_SCOPE });
   const [sources, setSources] = useState<SourceConnection[]>([]);
   const [evidence, setEvidence] = useState<EvidenceReference[]>([]);
+  const [sessionContext, setSessionContext] = useState<SessionContextSnapshot | null>(null);
   const [evidenceContext, setEvidenceContext] = useState('');
   const [loading, setLoading] = useState(true);
   const [evidenceLoading, setEvidenceLoading] = useState(true);
@@ -51,6 +54,7 @@ export function useCommandCenter(
       setLoading(false);
       setEvidenceLoading(false);
       setEvidence([]);
+      setSessionContext(null);
       setEvidenceContext('');
       return;
     }
@@ -69,16 +73,19 @@ export function useCommandCenter(
       if (!privateSourceAccess) {
         setSources([]);
         setEvidence([]);
+        setSessionContext(null);
         setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
         return;
       }
-      const [sourceResponse, evidenceResponse] = await Promise.all([
+      const [sourceResponse, evidenceResponse, contextResponse] = await Promise.all([
         send('sources.list', { workspaceId: nextScope.workspaceId }),
         send('evidence.list', { sessionKey, workspaceId: nextScope.workspaceId }),
+        send('session.context.get', { sessionKey }),
       ]);
       if (!cancelled) {
         setSources(parseSourceConnections(sourceResponse.sources));
           setEvidence(parseEvidenceReferences(evidenceResponse.evidence));
+          setSessionContext(parseSessionContext(contextResponse.context));
           setEvidenceContext(`${sessionKey}:${nextScope.workspaceId}`);
       }
     }).catch((cause: unknown) => {
@@ -105,23 +112,41 @@ export function useCommandCenter(
     setSaving(true);
     setError(null);
     try {
-      const response = await send('session.scope.set', { sessionKey, ...candidate });
+      const response = await send('session.scope.set', {
+        sessionKey,
+        ...candidate,
+        resetContext: candidate.workspaceId !== scope.workspaceId,
+      });
       const persisted = parseWorkspaceScope(response.scope);
       setScope(persisted);
       if (persisted.workspaceId !== scope.workspaceId) {
         if (!privateSourceAccess) {
           setSources([]);
           setEvidence([]);
+          setSessionContext(null);
           setEvidenceContext(`${sessionKey}:${persisted.workspaceId}`);
           return persisted;
         }
         try {
-          await Promise.all([loadSources(persisted.workspaceId), loadEvidence(persisted.workspaceId)]);
+          const [, , contextResponse] = await Promise.all([
+            loadSources(persisted.workspaceId),
+            loadEvidence(persisted.workspaceId),
+            send('session.context.get', { sessionKey }),
+          ]);
+          setSessionContext(parseSessionContext(contextResponse.context));
         } catch {
           setSources([]);
           setEvidence([]);
           setEvidenceContext('');
           setError('Scope saved, but source health is unavailable');
+        }
+      } else if (persisted.mode !== scope.mode && privateSourceAccess) {
+        try {
+          const contextResponse = await send('session.context.get', { sessionKey });
+          setSessionContext(parseSessionContext(contextResponse.context));
+        } catch {
+          setSessionContext(null);
+          setError('Scope saved, but session context is unavailable');
         }
       }
       return persisted;
@@ -172,8 +197,30 @@ export function useCommandCenter(
     }
   }, [loadEvidence, privateSourceAccess, scope.workspaceId, sessionKey]);
 
+  const refreshWorkspaces = useCallback(async () => {
+    const response = await send('workspaces.list', {});
+    const next = parseWorkspaces(response.workspaces);
+    setWorkspaces(next);
+    return next;
+  }, [send]);
+
+  const createWorkspace = useCallback(async (input: { label: string; description: string }) => {
+    await send('workspaces.create', input);
+    return refreshWorkspaces();
+  }, [refreshWorkspaces, send]);
+
+  const updateWorkspace = useCallback(async (workspaceId: WorkspaceId, input: { label: string; description: string }) => {
+    await send('workspaces.update', { workspaceId, ...input });
+    const next = await refreshWorkspaces();
+    if (workspaceId === scope.workspaceId && privateSourceAccess) {
+      const contextResponse = await send('session.context.get', { sessionKey });
+      setSessionContext(parseSessionContext(contextResponse.context));
+    }
+    return next;
+  }, [privateSourceAccess, refreshWorkspaces, scope.workspaceId, send, sessionKey]);
+
   return {
-    workspaces, scope, sources, evidence: visibleEvidence, health, loading, evidenceLoading, saving, error,
-    updateScope, refreshSources, refreshEvidence,
+    workspaces, scope, sources, evidence: visibleEvidence, sessionContext, health, loading, evidenceLoading, saving, error,
+    updateScope, refreshSources, refreshEvidence, refreshWorkspaces, createWorkspace, updateWorkspace,
   };
 }

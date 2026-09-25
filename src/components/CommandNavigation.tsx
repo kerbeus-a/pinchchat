@@ -1,11 +1,9 @@
-import { Database, ListChecks, MessageSquareText, Network } from 'lucide-react';
+import { MessageSquareText, Network } from 'lucide-react';
 import type { CommandView } from '../lib/commandView';
 
 const ITEMS: Array<{ view: Exclude<CommandView, 'swarm'>; label: string; icon: typeof MessageSquareText }> = [
   { view: 'chat', label: 'Chat', icon: MessageSquareText },
   { view: 'investigations', label: 'GM Activity', icon: Network },
-  { view: 'review', label: 'Review', icon: ListChecks },
-  { view: 'sources', label: 'Sources', icon: Database },
 ];
 
 function NavigationItems({ activeView, onSelect, mobile = false }: {

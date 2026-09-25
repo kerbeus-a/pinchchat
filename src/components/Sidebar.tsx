@@ -18,6 +18,9 @@ import {
 import { copyToClipboard } from '../lib/clipboard';
 import { SessionRecall } from './SessionRecall';
 import { SessionPreview } from './SessionPreview';
+import type { WorkspaceDefinition } from '../lib/commandCenter';
+
+const WORKSPACE_FILTER_KEY = 'pinchchat-workspace-filter';
 
 function VersionBadge() {
   const update = useUpdateCheck(__APP_VERSION__);
@@ -233,6 +236,7 @@ export function NewSessionSplitButton({ onNewSession, onNewSessionForAgent, agen
 
 interface Props {
   sessions: Session[];
+  workspaces?: WorkspaceDefinition[];
   agents?: string[];
   activeSession: string;
   onSwitch: (key: string) => void;
@@ -257,7 +261,7 @@ interface Props {
   onViewSubagent?: (sub: SubagentSummary) => void;
 }
 
-export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename, onNewSession, onNewSessionForAgent, onToast, isAdmin = false, loadSubagents, onViewSubagent }: Props) {
+export function Sidebar({ sessions, workspaces = [], agents = [], activeSession, onSwitch, onDelete, onSplit, splitSession, open, onClose, onRename, onNewSession, onNewSessionForAgent, onToast, isAdmin = false, loadSubagents, onViewSubagent }: Props) {
   const t = useT();
   const [filter, setFilter] = useState('');
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -271,6 +275,9 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
   });
   const [agentFilter, setAgentFilter] = useState<string | null>(() => {
     try { return localStorage.getItem(AGENT_FILTER_KEY); } catch { return null; }
+  });
+  const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(() => {
+    try { return localStorage.getItem(WORKSPACE_FILTER_KEY); } catch { return null; }
   });
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -503,6 +510,9 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
         return id === agentFilter;
       });
     }
+    if (workspaceFilter) {
+      list = list.filter((session) => (session.workspaceId ?? 'tasterra') === workspaceFilter);
+    }
     if (filter.trim()) {
       const q = filter.toLowerCase();
       list = list.filter(s => (s.topicName || customNames[s.key] || sessionDisplayName(s)).toLowerCase().includes(q));
@@ -523,7 +533,7 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
     pinnedList.sort(byCustomThenRecent);
     unpinnedList.sort(byCustomThenRecent);
     return [...pinnedList, ...unpinnedList];
-  }, [sessions, filter, pinned, customOrder, channelFilter, agentFilter, customNames]);
+  }, [sessions, filter, pinned, customOrder, channelFilter, agentFilter, workspaceFilter, customNames]);
 
   return (
     <>
@@ -587,6 +597,30 @@ export function Sidebar({ sessions, agents = [], activeSession, onSwitch, onDele
         <div className="px-2 pt-1">
           <SessionRecall onPick={(key) => { onSwitch(key); onClose(); }} />
         </div>
+
+        {workspaces.length > 1 && (
+          <div className="px-2 pt-2">
+            <label className="block">
+              <span className="sr-only">Filter conversations by workspace</span>
+              <select
+                value={workspaceFilter ?? ''}
+                onChange={(event) => {
+                  const next = event.target.value || null;
+                  setWorkspaceFilter(next);
+                  try {
+                    if (next) localStorage.setItem(WORKSPACE_FILTER_KEY, next);
+                    else localStorage.removeItem(WORKSPACE_FILTER_KEY);
+                  } catch { /* noop */ }
+                }}
+                className="h-8 w-full rounded-md border border-pc-border bg-[var(--pc-bg-input)] px-2.5 text-xs text-pc-text-secondary outline-none focus:border-pc-accent"
+                aria-label="Workspace filter"
+              >
+                <option value="">All workspaces</option>
+                {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.label}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
 
         {/* Filter chips */}
         {(showSessionFilters || availableAgentIds.length >= 2) && (

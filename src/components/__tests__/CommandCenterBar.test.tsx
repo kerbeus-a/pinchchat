@@ -30,6 +30,8 @@ describe('CommandCenterBar', () => {
         onToggleEvidence={vi.fn()}
         onRequestActionAccess={vi.fn()}
         onUpdateScope={update}
+        onCreateWorkspace={vi.fn()}
+        onUpdateWorkspace={vi.fn()}
       />,
     );
 
@@ -54,6 +56,8 @@ describe('CommandCenterBar', () => {
         onToggleEvidence={vi.fn()}
         onRequestActionAccess={vi.fn()}
         onUpdateScope={update}
+        onCreateWorkspace={vi.fn()}
+        onUpdateWorkspace={vi.fn()}
       />,
     );
 
@@ -79,6 +83,8 @@ describe('CommandCenterBar', () => {
         onToggleEvidence={vi.fn()}
         onRequestActionAccess={requestAccess}
         onUpdateScope={update}
+        onCreateWorkspace={vi.fn()}
+        onUpdateWorkspace={vi.fn()}
       />,
     );
 

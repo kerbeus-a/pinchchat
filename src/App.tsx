@@ -18,8 +18,6 @@ import { CommandNavigation } from './components/CommandNavigation';
 import { CommandCenterBar } from './components/CommandCenterBar';
 import { ActionUnlockDialog } from './components/ActionUnlockDialog';
 import { EvidencePanel } from './components/EvidencePanel';
-import { ReviewView } from './components/ReviewView';
-import { SourcesView } from './components/SourcesView';
 import { useCommandCenter } from './hooks/useCommandCenter';
 import { sessionDisplayName, extractAgentIdFromKey, formatAgentId } from './lib/sessionName';
 import { commandViewFromHash, shouldClearCommandHashForSessionSwitch, shouldReturnToChatOnSessionSwitch, type CommandView } from './lib/commandView';
@@ -134,14 +132,15 @@ export default function App() {
     authenticated === true,
     agentIdentity?.isAdmin === true,
   );
+  const refreshEvidence = commandCenter.refreshEvidence;
   const wasGeneratingRef = useRef(isGenerating);
   useSwipeSidebar(sidebarOpen, () => setSidebarOpen(true), () => setSidebarOpen(false));
 
   useEffect(() => {
     const finished = wasGeneratingRef.current && !isGenerating;
     wasGeneratingRef.current = isGenerating;
-    if (finished) void commandCenter.refreshEvidence();
-  }, [commandCenter.refreshEvidence, isGenerating]);
+    if (finished) void refreshEvidence();
+  }, [isGenerating, refreshEvidence]);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning'; leaving?: boolean } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -281,6 +280,7 @@ export default function App() {
       <CommandNavigation activeView={commandView} onSelect={navigateCommandView} />
       <Sidebar
         sessions={sessions}
+        workspaces={commandCenter.workspaces}
         agents={agents}
         activeSession={activeSession}
         onSwitch={handleSessionSwitch}
@@ -299,7 +299,7 @@ export default function App() {
       />
       <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen ? true : undefined}>
         <div ref={splitContainerRef} className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : commandView === 'review' ? 'Review' : commandView === 'sources' ? 'Sources' : t('app.mainChat')}>
+        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : t('app.mainChat')}>
           {commandView === 'chat' && (
             <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
           )}
@@ -316,6 +316,8 @@ export default function App() {
             onToggleEvidence={() => setEvidenceOpen((open) => !open)}
             onRequestActionAccess={() => setActionUnlockOpen(true)}
             onUpdateScope={commandCenter.updateScope}
+            onCreateWorkspace={commandCenter.createWorkspace}
+            onUpdateWorkspace={commandCenter.updateWorkspace}
           />
           {commandView === 'swarm' ? (
             <SwarmView />
@@ -327,10 +329,6 @@ export default function App() {
               accessAvailable={agentIdentity?.isAdmin === true}
               onRequestAccess={() => setActionUnlockOpen(true)}
             />
-          ) : commandView === 'review' ? (
-            <ReviewView />
-          ) : commandView === 'sources' ? (
-            <SourcesView sources={commandCenter.sources} loading={commandCenter.loading} error={commandCenter.error} onRefresh={() => { void commandCenter.refreshSources(); }} />
           ) : (
             <>
               <ConnectionBanner status={status} />
@@ -378,6 +376,8 @@ export default function App() {
           workspaceLabel={workspaceLabel}
           sources={commandCenter.sources}
           evidence={commandCenter.evidence}
+          sessionContext={commandCenter.sessionContext}
+          messages={messages}
           loading={commandCenter.evidenceLoading}
           onRefresh={() => { void commandCenter.refreshEvidence(); }}
           onClose={() => setEvidenceOpen(false)}

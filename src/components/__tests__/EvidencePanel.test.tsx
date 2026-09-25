@@ -27,6 +27,11 @@ describe('EvidencePanel', () => {
       workspaceLabel="TasTerra"
       sources={[]}
       evidence={evidence}
+      sessionContext={{ systemPrompt: 'Workspace: TasTerra. Query mode.', historyMode: 'runner-managed' }}
+      messages={[{
+        id: 'm1', role: 'user', content: 'Find the Ivan invoice', timestamp: 1,
+        blocks: [{ type: 'text', text: 'Find the Ivan invoice' }],
+      }]}
       loading={false}
       onRefresh={refresh}
       onClose={vi.fn()}
@@ -37,6 +42,8 @@ describe('EvidencePanel', () => {
     expect(screen.queryByText('Group topic 4346')).toBeNull();
     expect(screen.getByText('Qwen3.5')).toBeTruthy();
     expect(screen.getByText('12,000 / 131,072 tokens')).toBeTruthy();
+    expect(screen.getByText('Workspace: TasTerra. Query mode.')).toBeTruthy();
+    expect(screen.getByText('Recorded conversation (1)')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
     expect(screen.getByText('BILL/2026/0041')).toBeTruthy();
     expect(screen.getByText('Ivan Mining | not_paid | 1200 | USD')).toBeTruthy();

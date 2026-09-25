@@ -203,6 +203,7 @@ describe('KinGatewayClient — command center', () => {
       workspace_id: 'home',
       mode: 'action',
       source_ids: ['mail-home'],
+      reset_context: false,
     });
     expect(fetchSpy.mock.calls[3]?.[0]).toBe('http://localhost/kinchat/v1/api/sources?workspace=other-company');
     expect(fetchSpy.mock.calls[4]?.[0]).toBe('http://localhost/kinchat/v1/api/sessions/session%2Fwith%20spaces/evidence?workspace=tasterra');
