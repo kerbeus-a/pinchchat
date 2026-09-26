@@ -109,7 +109,10 @@ export function LoginScreen({ onConnect, error, isConnecting }: Props) {
       return;
     }
     firedRef.current = true;
-    window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    // Scrub credential links, but preserve command-center navigation on LAN login.
+    if (hash.token !== undefined || hash.bridgeUrl !== undefined) {
+      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    }
     onConnect(effectiveBridge, hash.token || undefined);
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps

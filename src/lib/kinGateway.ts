@@ -410,6 +410,34 @@ export class KinGatewayClient {
         return await res.json() as JsonPayload;
       }
 
+      case 'processing.list':
+      case 'processing.enqueue':
+      case 'processing.control':
+      case 'processing.preview':
+      case 'processing.upload': {
+        const workspace = encodeURIComponent(String(params.workspaceId ?? ''));
+        let path = `/api/processing/${workspace}`;
+        let options: RequestInit = { headers: this.authHeaders(), signal: AbortSignal.timeout(30_000) };
+        if (method === 'processing.list') {
+          if (params.before != null) path += `?before=${encodeURIComponent(String(params.before))}`;
+        } else if (method === 'processing.upload') {
+          if (!(params.file instanceof File) || params.file.size < 1 || params.file.size > 50 * 1024 ** 2) throw new Error('Choose a PDF of up to 50 MiB.');
+          path = `/api/intake/${workspace}?action=process_as_record&request_id=${encodeURIComponent(String(params.requestId))}&name=${encodeURIComponent(params.file.name)}`;
+          options = { method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/pdf' }), body: params.file, signal: AbortSignal.timeout(125_000) };
+        } else if (method === 'processing.preview') {
+          path += `/${encodeURIComponent(String(params.jobId))}/preview`;
+        } else {
+          path += method === 'processing.enqueue' ? '/enqueue' : `/${encodeURIComponent(String(params.jobId))}/control`;
+          options = { ...options, method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(method === 'processing.enqueue' ? { receiptId: params.receiptId } : { action: params.action, revision: params.revision }) };
+        }
+        const res = await fetch(`${url}${path}`, options);
+        if (res.status === 401 || res.status === 403) throw new AuthError('Owner access is no longer available.');
+        const result = await res.json() as JsonPayload;
+        if (!res.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Document request failed.');
+        return result;
+      }
+
       case 'sessions.delete': {
         const key = params.key as string;
         await fetch(`${url}/api/sessions/${encodeURIComponent(key)}?agent=${agent}`, { method: 'DELETE', headers: this.authHeaders() });

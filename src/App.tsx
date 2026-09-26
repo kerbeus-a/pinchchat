@@ -16,6 +16,7 @@ import { SwarmView } from './components/SwarmView';
 import { GmCommandCenter } from './components/GmCommandCenter';
 import { CommandNavigation } from './components/CommandNavigation';
 import { SystemView } from './components/SystemView';
+import { ProcessingView } from './components/ProcessingView';
 import { CommandCenterBar } from './components/CommandCenterBar';
 import { ActionUnlockDialog } from './components/ActionUnlockDialog';
 import { EvidencePanel } from './components/EvidencePanel';
@@ -273,14 +274,15 @@ export default function App() {
   const workspaceLabel = commandCenter.workspaces.find((workspace) => workspace.id === commandCenter.scope.workspaceId)?.label
     ?? commandCenter.scope.workspaceId;
   const activeSessionData = sessions.find((session) => session.key === activeSession);
-  const showSplit = Boolean(splitSession) && commandView !== 'system';
+  const standaloneView = commandView === 'system' || commandView === 'processing';
+  const showSplit = Boolean(splitSession) && !standaloneView;
 
   return (
     <ToolCollapseProvider>
     <div className="h-dvh flex overflow-hidden bg-[var(--pc-bg-base)] pb-14 text-pc-text lg:pb-0" role="application" aria-label="Kin command center">
       <a href="#chat-input" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-pc-accent focus:text-white focus:text-sm focus:font-medium">{t('app.skipToChat')}</a>
       <CommandNavigation activeView={commandView} onSelect={navigateCommandView} />
-      {commandView !== 'system' && <Sidebar
+      {!standaloneView && <Sidebar
         sessions={sessions}
         workspaces={commandCenter.workspaces}
         agents={agents}
@@ -299,13 +301,13 @@ export default function App() {
         loadSubagents={loadSubagentsForSession}
         onViewSubagent={setViewingSubagent}
       />}
-      <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen && commandView !== 'system' ? true : undefined}>
+      <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen && !standaloneView ? true : undefined}>
         <div ref={splitContainerRef} className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-col" style={showSplit ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'system' ? 'System' : commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : t('app.mainChat')}>
+        <main className="flex min-w-0 flex-col" style={showSplit ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'processing' ? 'Processing' : commandView === 'system' ? 'System' : commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : t('app.mainChat')}>
           {commandView === 'chat' && (
             <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
           )}
-          {commandView !== 'system' && <CommandCenterBar
+          {!standaloneView && <CommandCenterBar
             workspaces={commandCenter.workspaces}
             scope={commandCenter.scope}
             sources={commandCenter.sources}
@@ -321,7 +323,9 @@ export default function App() {
             onCreateWorkspace={commandCenter.createWorkspace}
             onUpdateWorkspace={commandCenter.updateWorkspace}
           />}
-          {commandView === 'system' ? (
+          {commandView === 'processing' ? (
+            <ProcessingView send={send} workspaces={commandCenter.workspaces} accessAvailable={agentIdentity?.isAdmin === true} />
+          ) : commandView === 'system' ? (
             <SystemView send={send} accessAvailable={agentIdentity?.isAdmin === true} />
           ) : commandView === 'swarm' ? (
             <SwarmView />
@@ -374,7 +378,7 @@ export default function App() {
         )}
         </div>
         <EvidencePanel
-          open={evidenceOpen && commandView !== 'system'}
+          open={evidenceOpen && !standaloneView}
           session={activeSessionData}
           scope={commandCenter.scope}
           workspaceLabel={workspaceLabel}

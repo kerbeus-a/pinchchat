@@ -33,4 +33,20 @@ describe('LoginScreen LAN no-auth startup', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onConnect).not.toHaveBeenCalled();
   });
+
+  it.each(['processing', 'system', 'gm'])('preserves the %s view during LAN login', async (view) => {
+    window.history.replaceState({}, '', `/kinchat#${view}`);
+    const onConnect = vi.fn();
+    render(<LoginScreen onConnect={onConnect} isConnecting={false} />);
+    await waitFor(() => expect(onConnect).toHaveBeenCalled());
+    expect(window.location.hash).toBe(`#${view}`);
+  });
+
+  it('still removes a token from the URL after connecting', async () => {
+    window.history.replaceState({}, '', '/kinchat#token=synthetic-only');
+    const onConnect = vi.fn();
+    render(<LoginScreen onConnect={onConnect} isConnecting={false} />);
+    await waitFor(() => expect(onConnect).toHaveBeenCalledWith(`${window.location.origin}/kinchat/v1`, 'synthetic-only'));
+    expect(window.location.hash).toBe('');
+  });
 });

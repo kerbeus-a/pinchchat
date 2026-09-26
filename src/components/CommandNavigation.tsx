@@ -1,9 +1,10 @@
-import { MessageSquareText, Network, Server } from 'lucide-react';
+import { FileStack, MessageSquareText, Network, Server } from 'lucide-react';
 import type { CommandView } from '../lib/commandView';
 
 const ITEMS: Array<{ view: Exclude<CommandView, 'swarm'>; label: string; icon: typeof MessageSquareText }> = [
   { view: 'chat', label: 'Chat', icon: MessageSquareText },
   { view: 'investigations', label: 'GM Activity', icon: Network },
+  { view: 'processing', label: 'Processing', icon: FileStack },
   { view: 'system', label: 'System', icon: Server },
 ];
 
