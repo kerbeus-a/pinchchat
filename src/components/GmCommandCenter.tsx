@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Bot, CheckCircle2, CornerUpLeft, Cpu, FileText, GitBranch, KeyRound, Link, MessageSquare, Network, Pause, Play, RefreshCw, RotateCcw, Send, SquarePlus, Undo2, XCircle } from 'lucide-react';
 import type { JsonPayload } from '../lib/kinGateway';
 import { relativeTime } from '../lib/relativeTime';
+import { ProcessingView } from './ProcessingView';
 
 function QwenReasoningSelect({ label, value, onChange, disabled }: { label: string; value: string; onChange: (value: string) => void; disabled: boolean }) {
   return <label className="flex min-w-0 items-center justify-between gap-2 text-xs text-pc-text-muted">
@@ -123,7 +124,20 @@ interface GmDetail {
   timeline?: GmTimelineItem[];
 }
 
-export function GmCommandCenter({
+export function GmCommandCenter(props: Parameters<typeof GmMissionCenter>[0] & { workspaces?: Array<{ id: string; label: string }> }) {
+  const [lane, setLane] = useState<'missions' | 'private'>('missions');
+  return <div className="flex h-full min-h-0 flex-col">
+    <div className="flex shrink-0 gap-4 border-b border-pc-border px-4" role="tablist" aria-label="GM work type">
+      <button role="tab" aria-selected={lane === 'missions'} className={`border-b-2 py-3 text-xs ${lane === 'missions' ? 'border-pc-accent text-pc-accent-light' : 'border-transparent text-pc-text-muted'}`} onClick={() => setLane('missions')}>Missions</button>
+      <button role="tab" aria-selected={lane === 'private'} className={`border-b-2 py-3 text-xs ${lane === 'private' ? 'border-pc-accent text-pc-accent-light' : 'border-transparent text-pc-text-muted'}`} onClick={() => setLane('private')}>Private processing</button>
+    </div>
+    {lane === 'private'
+      ? <ProcessingView send={props.send} workspaces={props.workspaces ?? []} accessAvailable={props.accessAvailable !== false} />
+      : <GmMissionCenter {...props} />}
+  </div>;
+}
+
+function GmMissionCenter({
   send,
   sourceSessionId,
   onOpenSourceSession,

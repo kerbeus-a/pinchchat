@@ -414,6 +414,7 @@ export class KinGatewayClient {
       case 'processing.enqueue':
       case 'processing.control':
       case 'processing.preview':
+      case 'processing.activity':
       case 'processing.upload': {
         const workspace = encodeURIComponent(String(params.workspaceId ?? ''));
         let path = `/api/processing/${workspace}`;
@@ -424,8 +425,8 @@ export class KinGatewayClient {
           if (!(params.file instanceof File) || params.file.size < 1 || params.file.size > 50 * 1024 ** 2) throw new Error('Choose a PDF of up to 50 MiB.');
           path = `/api/intake/${workspace}?action=process_as_record&request_id=${encodeURIComponent(String(params.requestId))}&name=${encodeURIComponent(params.file.name)}`;
           options = { method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/pdf' }), body: params.file, signal: AbortSignal.timeout(125_000) };
-        } else if (method === 'processing.preview') {
-          path += `/${encodeURIComponent(String(params.jobId))}/preview`;
+        } else if (method === 'processing.preview' || method === 'processing.activity') {
+          path += `/${encodeURIComponent(String(params.jobId))}/${method === 'processing.preview' ? 'preview' : 'activity'}`;
         } else {
           path += method === 'processing.enqueue' ? '/enqueue' : `/${encodeURIComponent(String(params.jobId))}/control`;
           options = { ...options, method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/json' }),

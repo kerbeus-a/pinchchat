@@ -274,7 +274,7 @@ export default function App() {
   const workspaceLabel = commandCenter.workspaces.find((workspace) => workspace.id === commandCenter.scope.workspaceId)?.label
     ?? commandCenter.scope.workspaceId;
   const activeSessionData = sessions.find((session) => session.key === activeSession);
-  const standaloneView = commandView === 'system' || commandView === 'processing';
+  const standaloneView = commandView === 'system' || commandView === 'processing' || commandView === 'investigations';
   const showSplit = Boolean(splitSession) && !standaloneView;
 
   return (
@@ -332,6 +332,7 @@ export default function App() {
           ) : commandView === 'investigations' ? (
             <GmCommandCenter
               send={send}
+              workspaces={commandCenter.workspaces}
               sourceSessionId={sessions.find((session) => session.key === activeSession)?.channel === 'Web' ? activeSession : undefined}
               onOpenSourceSession={handleSessionSwitch}
               accessAvailable={agentIdentity?.isAdmin === true}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Pause, Play, RefreshCw, RotateCcw, Upload, X } from 'lucide-react';
+import { Activity, ChevronLeft, ChevronRight, FileText, Pause, Play, RefreshCw, RotateCcw, Upload, X } from 'lucide-react';
+import { DocumentActivity } from './DocumentActivity';
 import type { JsonPayload } from '../lib/kinGateway';
 import { genIdempotencyKey } from '../lib/utils';
 
@@ -51,6 +52,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
   const [pages, setPages] = useState<Array<number | null>>([]);
   const [upload, setUpload] = useState<{ file: File; requestId: string } | null>(null);
   const [preview, setPreview] = useState<{ name: string; text: string | null; truncated: boolean } | null>(null);
+  const [activity, setActivity] = useState<{ jobId: string; name: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const pending = useRef(false);
@@ -59,7 +61,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
   const reportError = useCallback((e: unknown) => {
     setError(e instanceof Error ? e.message : 'Document operation failed.');
     if (e instanceof Error && e.name === 'AuthError') {
-      setData(null); setPreview(null); setUpload(null); previewGeneration.current++;
+      setData(null); setPreview(null); setActivity(null); setUpload(null); previewGeneration.current++;
     }
   }, []);
   const refresh = useCallback(async () => {
@@ -111,6 +113,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
     });
   });
   const openPreview = async (doc: Document) => {
+    setActivity(null);
     const current = ++previewGeneration.current;
     setPreview({ name: doc.name, text: null, truncated: false });
     try {
@@ -120,7 +123,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
       if (current === previewGeneration.current) { setPreview(null); reportError(e); }
     }
   };
-  const changePage = (next: number | null) => { setData(null); setCursor(next); setPreview(null); };
+  const changePage = (next: number | null) => { previewGeneration.current++; setData(null); setCursor(next); setPreview(null); setActivity(null); };
 
   return <div className="min-h-0 flex-1 overflow-y-auto p-4" aria-label="Processing records">
     <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -145,7 +148,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
     {error && <p role="alert" className="mb-3 text-sm text-red-400 [overflow-wrap:anywhere]">{error}</p>}
     {busy && <p role="status" className="mb-3 text-xs text-pc-text-muted">Saving request...</p>}
     {!data && <p className="text-sm text-pc-text-muted">{loading ? 'Loading documents...' : 'No readings available.'}</p>}
-    <div className={`grid min-w-0 gap-6 ${preview ? 'xl:grid-cols-2' : ''}`}>
+    <div className={`grid min-w-0 gap-6 ${preview || activity ? 'xl:grid-cols-2' : ''}`}>
       <div className="min-w-0">
         {data?.documents.length === 0 && <p className="border-y border-pc-border py-6 text-sm text-pc-text-muted">No documents in this workspace.</p>}
         {data?.documents.map(doc => {
@@ -160,6 +163,9 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
             </div>
             {doc.job?.error_code && <p className="mt-2 text-xs text-amber-400">{ERROR_LABELS[doc.job.error_code] ?? 'Processing requires attention'}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
+              {doc.job && <button className={buttonClass} title="Inspect private task" aria-label={`Inspect ${doc.name}`} onClick={() => {
+                previewGeneration.current++; setPreview(null); setActivity({ jobId: doc.job!.id, name: doc.name });
+              }}><Activity size={15} /></button>}
               {state === 'received' && <button className={buttonClass} disabled={!canRun || busy} title="Parse document" aria-label={`Parse ${doc.name}`} onClick={() => actOn(doc, 'enqueue')}><Play size={15} /></button>}
               {['queued', 'running'].includes(state) && <button className={buttonClass} disabled={busy} title="Pause" aria-label={`Pause ${doc.name}`} onClick={() => actOn(doc, 'pause')}><Pause size={15} /></button>}
               {state === 'paused' && <button className={buttonClass} disabled={!canRun || busy || doc.job!.attempt >= 3} title="Resume" aria-label={`Resume ${doc.name}`} onClick={() => actOn(doc, 'resume')}><Play size={15} /></button>}
@@ -175,6 +181,7 @@ function WorkspaceProcessing({ workspace, send, onBusy }: { workspace: string; s
           <button className={buttonClass} disabled={busy || loading || data?.nextCursor == null} title="Older documents" aria-label="Older documents" onClick={() => { setPages([...pages, cursor]); changePage(data!.nextCursor); }}><ChevronRight size={16} /></button>
         </div>}
       </div>
+      {activity && <DocumentActivity key={activity.jobId} send={send} workspace={workspace} jobId={activity.jobId} name={activity.name} onClose={() => setActivity(null)} />}
       {preview && <aside className="min-w-0 border-t border-pc-border pt-3 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0" aria-label="Parsed text preview">
         <div className="mb-2 flex items-start gap-3"><h2 className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">{preview.name}</h2>
           <button className={buttonClass} title="Close preview" aria-label="Close preview" onClick={() => { previewGeneration.current++; setPreview(null); }}><X size={15} /></button></div>
