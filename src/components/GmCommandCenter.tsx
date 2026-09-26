@@ -3,6 +3,19 @@ import { Activity, Bot, CheckCircle2, CornerUpLeft, Cpu, FileText, GitBranch, Ke
 import type { JsonPayload } from '../lib/kinGateway';
 import { relativeTime } from '../lib/relativeTime';
 
+function QwenReasoningSelect({ label, value, onChange, disabled }: { label: string; value: string; onChange: (value: string) => void; disabled: boolean }) {
+  return <label className="flex min-w-0 items-center justify-between gap-2 text-xs text-pc-text-muted">
+    <span>Qwen reasoning</span>
+    <select aria-label={label} value={value} onChange={event => onChange(event.target.value)} disabled={disabled}
+      className="min-w-0 rounded border border-pc-border bg-[var(--pc-bg-base)] px-2 py-1.5 text-pc-text">
+      <option value="none">Off</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="xhigh">Extra High</option>
+    </select>
+  </label>;
+}
+
 type SendFn = (method: string, params: JsonPayload) => Promise<JsonPayload>;
 
 interface GmMission {
@@ -34,6 +47,7 @@ interface GmTask {
   started_at?: string | null;
   completed_at?: string | null;
   execution?: {
+    localReasoningEffort?: string;
     role: string;
     risk: string;
     expectedArtifact: string;
@@ -132,6 +146,8 @@ export function GmCommandCenter({
   const [selectedContextRunId, setSelectedContextRunId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('overview');
   const [command, setCommand] = useState('');
+  const [missionReasoning, setMissionReasoning] = useState('xhigh');
+  const [taskReasoning, setTaskReasoning] = useState('xhigh');
   const [criteria, setCriteria] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskObjective, setTaskObjective] = useState('');
@@ -262,6 +278,7 @@ export function GmCommandCenter({
         command: trimmed,
         acceptanceCriteria: criteriaList(criteria),
         startTask: true,
+        localReasoningEffort: missionReasoning,
         ...(sourceSessionId ? { sourceSessionId } : {}),
       });
       const created = res.mission as { id?: string } | undefined;
@@ -270,7 +287,7 @@ export function GmCommandCenter({
       setCriteria('');
       await loadMissions();
     });
-  }, [command, criteria, criteriaList, loadMissions, runAction, send, sourceSessionId]);
+  }, [command, criteria, criteriaList, loadMissions, runAction, send, sourceSessionId, missionReasoning]);
 
   const createTask = useCallback(async () => {
     if (!detail) return;
@@ -286,6 +303,7 @@ export function GmCommandCenter({
         role: 'analyst',
         risk: 'low',
         expectedArtifact: 'summary',
+        localReasoningEffort: taskReasoning,
       });
       const task = res.task as { id?: string } | undefined;
       if (task?.id) setSelectedTaskId(task.id);
@@ -293,7 +311,7 @@ export function GmCommandCenter({
       setTaskObjective('');
       await loadMissionDetail(detail.mission.id);
     });
-  }, [detail, loadMissionDetail, runAction, send, taskObjective, taskTitle]);
+  }, [detail, loadMissionDetail, runAction, send, taskObjective, taskTitle, taskReasoning]);
 
   const missionAction = useCallback(async (method: string, reason: string) => {
     if (!detail) return;
@@ -482,6 +500,7 @@ export function GmCommandCenter({
               className="w-full resize-none rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
               placeholder="One per line"
             />
+            <QwenReasoningSelect label="Mission Qwen reasoning" value={missionReasoning} onChange={setMissionReasoning} disabled={working !== null} />
             <button
               type="submit"
               disabled={working !== null || !command.trim()}
@@ -687,7 +706,7 @@ export function GmCommandCenter({
                   </div>
 
                   <form
-                    className="grid gap-2 border-t border-pc-border p-3 2xl:grid-cols-[0.8fr_1.2fr_auto]"
+                    className="grid gap-2 border-t border-pc-border p-3"
                     onSubmit={(e) => { e.preventDefault(); void createTask(); }}
                   >
                     <input
@@ -703,6 +722,7 @@ export function GmCommandCenter({
                       className="rounded-xl border border-pc-border bg-[var(--pc-bg-base)] px-3 py-2 text-sm text-pc-text outline-none placeholder:text-pc-text-faint focus:ring-1 focus:ring-pc-accent/60"
                       placeholder="Objective"
                     />
+                    <QwenReasoningSelect label="Task Qwen reasoning" value={taskReasoning} onChange={setTaskReasoning} disabled={!canCreateTask || working !== null} />
                     <button
                       type="submit"
                       disabled={working !== null || !canCreateTask || !taskTitle.trim() || !taskObjective.trim()}
@@ -768,7 +788,11 @@ export function GmCommandCenter({
                             : selectedTask.execution?.projectId ? 'Persistent worker not launched yet' : 'Ephemeral run'} />
                           <DetailRow label="Session" value={selectedWorker?.sessionId ? shortId(selectedWorker.sessionId) : 'No reusable session'} mono />
                           <DetailRow label="Engine" value={runnerLabel(actualRunner)} />
-                          <DetailRow label="Model" value={modelLabel(actualModel)} />
+                            <DetailRow label="Model" value={modelLabel(actualModel)} />
+                            <DetailRow label="Qwen reasoning" value={actualRunner === 'qwen'
+                              ? stringValue(selectedRunStarted?.payload?.localReasoningEffort)
+                                ?? (!selectedContext ? selectedTask.execution?.localReasoningEffort : undefined) ?? 'Server default'
+                              : 'Not applicable'} />
                           <DetailRow label="Dispatch context" value={selectedContext
                             ? `${formatNumber(selectedContext.contextChars)} characters`
                             : historicalInstruction ? 'Historical snapshot available' : 'Not dispatched yet'} />
@@ -810,7 +834,8 @@ export function GmCommandCenter({
                           {selectedContext ? (
                             <>
                               <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-pc-text-muted">
-                                <span>{selectedContext.phase} context</span>
+                                  <span>{selectedContext.phase} context</span>
+                                  {selectedContext.runner === 'qwen' && <span>Reasoning: {stringValue(selectedRunStarted?.payload?.localReasoningEffort) ?? 'Server default'}</span>}
                                 <span>{modelLabel(selectedContext.model)}</span>
                                 <span>{formatNumber(selectedContext.contextChars)} characters</span>
                                 {numberValue(usage?.inputTokens) !== null && <span>{formatNumber(numberValue(usage?.inputTokens)!)} input tokens</span>}

@@ -5,6 +5,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('forwards the explicit local reasoning selection for missions and tasks', async () => {
+  const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
+  await connectClient(client);
+  const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(jsonResponse({ token: 'gm-test', expires_at: Date.now() + 60_000 }))
+    .mockImplementation(async () => jsonResponse({}));
+  await client.send('gm.command', { command: 'Check invoices', startTask: true, localReasoningEffort: 'none' });
+  expect(JSON.parse(fetchSpy.mock.calls.at(-1)![1]!.body as string)).toMatchObject({ local_reasoning_effort: 'none' });
+  await client.send('gm.task.create', { missionId: 'm1', title: 'Check', objective: 'Check invoices', localReasoningEffort: 'medium' });
+  expect(JSON.parse(fetchSpy.mock.calls.at(-1)![1]!.body as string)).toMatchObject({ local_reasoning_effort: 'medium' });
+});
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,

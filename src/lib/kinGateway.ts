@@ -475,6 +475,7 @@ export class KinGatewayClient {
             command: String(params.command ?? ''),
             acceptance_criteria: Array.isArray(params.acceptanceCriteria) ? params.acceptanceCriteria : [],
             ...(params.startTask === true ? { start_task: true } : {}),
+            ...(typeof params.localReasoningEffort === 'string' ? { local_reasoning_effort: params.localReasoningEffort } : {}),
             ...(sourceSessionId ? { source_session_id: sourceSessionId } : {}),
           }),
         });
@@ -553,6 +554,7 @@ export class KinGatewayClient {
         if (typeof params.role === 'string') body.role = params.role;
         if (typeof params.risk === 'string') body.risk = params.risk;
         if (typeof params.expectedArtifact === 'string') body.expected_artifact = params.expectedArtifact;
+        if (typeof params.localReasoningEffort === 'string') body.local_reasoning_effort = params.localReasoningEffort;
         return await this.gmFetch(`/api/gm/missions/${missionId}/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

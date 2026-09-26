@@ -128,6 +128,7 @@ describe('GmCommandCenter', () => {
         command: 'Build the command center controls',
         acceptanceCriteria: ['missions are visible'],
         startTask: true,
+        localReasoningEffort: 'xhigh',
         sourceSessionId: 'session-1',
       });
     });
@@ -208,7 +209,7 @@ describe('GmCommandCenter', () => {
     const events = [
       {
         id: 'start-1', task_id: 't1', type: 'task.run.started', summary: 'work invocation started', created_at: '2026-07-28T10:02:00Z',
-        payload: { id: 'run-1', maxTurns: 50, capabilities: ['read_source'] },
+        payload: { id: 'run-1', maxTurns: 50, capabilities: ['read_source'], localReasoningEffort: 'medium' },
       },
       {
         id: 'finish-1', task_id: 't1', type: 'task.run.finished', summary: 'work invocation returned', created_at: '2026-07-28T10:03:00Z',
@@ -233,9 +234,11 @@ describe('GmCommandCenter', () => {
     expect(screen.getByText('qwen3.5-35b-a3b-q4_k_m')).toBeDefined();
     expect(await screen.findByText('32,768 tokens configured')).toBeDefined();
     expect(screen.getByText('12,400')).toBeDefined();
+    expect(screen.getByText('medium')).toBeDefined();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Context' }));
     expect((await screen.findByLabelText('Exact dispatched context')).textContent).toBe(dispatch);
+    expect(screen.getByText('Reasoning: medium')).toBeDefined();
     fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
     expect(await screen.findAllByText('work invocation returned')).toHaveLength(2);
     expect(send).toHaveBeenCalledWith('gm.task.contexts', { taskId: 't1' });
