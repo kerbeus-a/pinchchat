@@ -655,13 +655,13 @@ export const ChatMessageComponent = memo(function ChatMessageComponent({ message
               </span>
             )}
             {isUser && message.sendStatus === 'sending' && (
-              <span title="Sending..."><Clock size={10} className="animate-pulse text-pc-text-faint" /></span>
+              <span className="flex items-center gap-1" role="status"><Clock size={10} className="animate-pulse text-pc-text-faint" />Sending</span>
             )}
             {isUser && message.sendStatus === 'sent' && (
-              <span title="Sent"><CheckCheck size={10} className="text-pc-accent" /></span>
+              <span className="flex items-center gap-1"><CheckCheck size={10} className="text-pc-accent" />Received</span>
             )}
             {isUser && message.sendStatus === 'error' && (
-              <span title="Failed to send"><AlertCircle size={10} className="text-red-400" /></span>
+              <span role="alert" className="flex min-w-0 items-center gap-1 text-red-400"><AlertCircle size={12} className="shrink-0" />Failed to send: {message.sendError ?? 'Please retry'}</span>
             )}
           </div>
         )}

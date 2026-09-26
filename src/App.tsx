@@ -290,7 +290,7 @@ export default function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onRename={handleRename}
-        onNewSession={createNewSession}
+        onNewSession={async () => { window.location.hash = ''; await createNewSession(); }}
         onNewSessionForAgent={createSessionForAgent}
         onToast={showToast}
         isAdmin={agentIdentity?.isAdmin === true}

@@ -16,7 +16,7 @@ export function mergeHistoryWithOptimistic(
   const optimistic = current.filter((message) => (
     message.role === 'user'
     && message.sendStatus !== undefined
-    && now - timestampMs(message) <= OPTIMISTIC_MESSAGE_TTL_MS
+    && (message.sendStatus === 'error' || now - timestampMs(message) <= OPTIMISTIC_MESSAGE_TTL_MS)
   ));
   if (optimistic.length === 0) return incoming;
 

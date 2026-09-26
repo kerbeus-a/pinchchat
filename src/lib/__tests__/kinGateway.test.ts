@@ -211,6 +211,16 @@ describe('KinGatewayClient — command center', () => {
 });
 
 describe('KinGatewayClient — streaming', () => {
+  it('sends on plain HTTP LAN origins without crypto.randomUUID', async () => {
+    const client = new KinGatewayClient('http://192.168.1.14/kinchat/v1', 'tok');
+    await connectClient(client);
+    const uuid = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => { throw new Error('Unavailable on HTTP'); });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(sseResponse([{ type: 'final', content: 'ok' }]));
+    const sent = await client.send('chat.send', { sessionKey: 's1', message: 'hello' });
+    expect(sent.runId).toMatch(/^run-/);
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(uuid).not.toHaveBeenCalled();
+  });
   it('posts chat attachments as multipart form data', async () => {
     const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
     await connectClient(client);

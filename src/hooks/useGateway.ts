@@ -8,6 +8,7 @@ import { extractText, extractThinking, type ChatPayloadMessage } from '../lib/me
 import { parseHistoryMessages } from '../lib/historyParser';
 import { isSameMessageHistory, mergeHistoryWithOptimistic } from '../lib/messageHistory';
 import { appendBackgroundOutcome } from '../lib/backgroundOutcome';
+import { readPendingMessages, writePendingMessages } from '../lib/pendingMessages';
 import type { ChatMessage, MessageBlock, ConnectionStatus, Session, AgentIdentity, OutgoingAttachment } from '../types';
 
 export function useGateway() {
@@ -198,6 +199,7 @@ export function useGateway() {
           channel: (s.lastChannel || s.channel) as string | undefined,
           kind: s.kind as string | undefined,
           model: s.model as string | undefined,
+          workspaceId: s.workspaceId as string | undefined,
           agentId: s.agentId as string | undefined,
           updatedAt: s.updatedAt as number | undefined,
           lastMessagePreview: s.lastMessagePreview as string | undefined,
@@ -271,7 +273,10 @@ export function useGateway() {
 
         if (activeSessionRef.current !== sessionKey) return;
         setMessages(current => {
-          const reconciled = mergeHistoryWithOptimistic(current, finalMessages);
+          const saved = readPendingMessages(clientRef.current?.memberId ?? '', sessionKey);
+          const pending = [...current, ...saved.filter(m => !current.some(item => item.id === m.id))];
+          const reconciled = mergeHistoryWithOptimistic(pending, finalMessages);
+          writePendingMessages(clientRef.current?.memberId ?? '', sessionKey, reconciled);
           return background && isSameMessageHistory(current, reconciled) ? current : reconciled;
         });
       }
@@ -303,6 +308,11 @@ export function useGateway() {
       setStatus(s);
       if (s === 'connected') {
         const resolvedAgent = client.memberId;
+        const selected = localStorage.getItem(`kin-selected-session:${resolvedAgent}`);
+        if (selected) {
+          activeSessionRef.current = selected;
+          setActiveSession(selected);
+        }
         setIsGenerating(false);
         setAuthenticated(true);
         setConnectError(null);
@@ -382,7 +392,8 @@ export function useGateway() {
           const index = prev.map((item) => item.role === 'user' && item.sendStatus === 'sending').lastIndexOf(true);
           if (index < 0) return prev;
           const next = [...prev];
-          next[index] = { ...next[index], sendStatus: 'sent' };
+          next[index] = { ...next[index], sendStatus: 'sent', sendError: undefined };
+          writePendingMessages(client.memberId, evtSession ?? activeSessionRef.current, next);
           return next;
         });
       } else if (state === 'delta') {
@@ -434,8 +445,9 @@ export function useGateway() {
         setMessages(prev => {
           const pendingIndex = prev.map((item) => item.role === 'user' && item.sendStatus === 'sending').lastIndexOf(true);
           const withFailure = pendingIndex < 0 ? prev : prev.map((item, index) => (
-            index === pendingIndex ? { ...item, sendStatus: 'error' as const } : item
+            index === pendingIndex ? { ...item, sendStatus: 'error' as const, sendError: errorMessage || 'Request failed' } : item
           ));
+          writePendingMessages(client.memberId, evtSession ?? '', withFailure);
           const last = withFailure[withFailure.length - 1];
           if (last && last.role === 'assistant' && last.isStreaming && last.runId === runId) {
             return [...withFailure.slice(0, -1), { ...last, isStreaming: false }];
@@ -489,6 +501,8 @@ export function useGateway() {
   }, [setupClient]);
 
   const sendMessage = useCallback(async (text: string, attachments?: OutgoingAttachment[]) => {
+    const sessionKey = activeSessionRef.current;
+    const member = clientRef.current?.memberId ?? '';
     const msgId = 'user-' + Date.now();
     const imageBlocks: MessageBlock[] = (attachments ?? [])
       .filter(a => a.mimeType.startsWith('image/') && a.previewBase64)
@@ -505,20 +519,29 @@ export function useGateway() {
       blocks: [...imageBlocks, { type: 'text', text: displayText }],
       sendStatus: 'sending',
     };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => {
+      const next = [...prev.filter(m => !(m.sendStatus === 'error' && m.content === displayText)), userMsg];
+      writePendingMessages(member, sessionKey, next);
+      return next;
+    });
     setIsGenerating(true);
 
     try {
-      await clientRef.current?.send('chat.send', {
-        sessionKey: activeSessionRef.current,
+      if (!clientRef.current) throw new Error('Not connected');
+      await clientRef.current.send('chat.send', {
+        sessionKey,
         message: text,
         deliver: false,
         idempotencyKey: genIdempotencyKey(),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
-    } catch {
+    } catch (cause) {
       // Mark as error and stop generating
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sendStatus: 'error' as const } : m));
+      setMessages(prev => {
+        const next = prev.map(m => m.id === msgId ? { ...m, sendStatus: 'error' as const, sendError: cause instanceof Error ? cause.message : 'Could not send message' } : m);
+        writePendingMessages(member, sessionKey, next);
+        return next;
+      });
       setIsGenerating(false);
     }
   }, []);
@@ -533,6 +556,7 @@ export function useGateway() {
   }, []);
 
   const switchSession = useCallback((key: string) => {
+    localStorage.setItem(`kin-selected-session:${clientRef.current?.memberId ?? ''}`, key);
     setActiveSession(key);
     activeSessionRef.current = key;
     setMessages([]);
@@ -677,7 +701,7 @@ export function useGateway() {
         setMessages(prev => {
           const active = prev.findIndex(message => message.isStreaming);
           const index = active < 0 ? prev.length : active;
-          const message: ChatMessage = { id: `download-error-${crypto.randomUUID()}`, role: 'assistant',
+          const message: ChatMessage = { id: `download-error-${genIdempotencyKey()}`, role: 'assistant',
             content, timestamp: Date.now(), blocks: [{ type: 'text', text: content }] };
           return [...prev.slice(0, index), message, ...prev.slice(index)];
         });

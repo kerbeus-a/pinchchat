@@ -7,6 +7,7 @@ export type JsonPayload = Record<string, unknown>;
 export type GatewayStatus = 'disconnected' | 'connecting' | 'connected' | 'pairing';
 
 import type { OutgoingAttachment } from '../types';
+import { genIdempotencyKey } from './utils';
 
 interface SessionRow {
   id?: unknown;
@@ -297,7 +298,7 @@ export class KinGatewayClient {
         const attachments = Array.isArray(params.attachments)
           ? params.attachments.filter(isOutgoingAttachment)
           : undefined;
-        const runId = 'run-' + crypto.randomUUID();
+        const runId = 'run-' + genIdempotencyKey();
 
         // Abort any existing stream
         if (this.abortController) this.abortController.abort();
@@ -314,6 +315,7 @@ export class KinGatewayClient {
           headers: this.authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ agent }),
         });
+        if (!res.ok) throw new Error(`Could not create session: HTTP ${res.status}`);
         const data = await res.json();
         return { key: data.session_id || data.key, sessionKey: data.session_id || data.key };
       }
@@ -472,6 +474,7 @@ export class KinGatewayClient {
           body: JSON.stringify({
             command: String(params.command ?? ''),
             acceptance_criteria: Array.isArray(params.acceptanceCriteria) ? params.acceptanceCriteria : [],
+            ...(params.startTask === true ? { start_task: true } : {}),
             ...(sourceSessionId ? { source_session_id: sourceSessionId } : {}),
           }),
         });

@@ -50,17 +50,15 @@ export function CommandCenterBar({
 }) {
   const sourceMenuRef = useRef<HTMLDetailsElement>(null);
   const [workspaceManagerOpen, setWorkspaceManagerOpen] = useState(false);
+  const [pendingWorkspace, setPendingWorkspace] = useState<string | null>(null);
   const disabled = loading || saving;
   const sourceLabel = scope.sourceIds.length === 0
     ? 'All sources'
     : `${scope.sourceIds.length} source${scope.sourceIds.length === 1 ? '' : 's'}`;
 
-  const changeWorkspace = async (workspaceId: WorkspaceId) => {
+  const changeWorkspace = (workspaceId: WorkspaceId) => {
     if (workspaceId === scope.workspaceId) return;
-    const selected = workspaces.find((workspace) => workspace.id === workspaceId);
-    const confirmed = window.confirm(`Move this conversation to ${selected?.label ?? workspaceId}? The visible chat will stay, but Kin will restart the model context so information from ${workspaces.find((workspace) => workspace.id === scope.workspaceId)?.label ?? 'the current workspace'} is not carried into the new workspace.`);
-    if (!confirmed) return;
-    await onUpdateScope({ workspaceId });
+    setPendingWorkspace(workspaceId);
   };
 
   const toggleSource = async (sourceId: string) => {
@@ -166,6 +164,19 @@ export function CommandCenterBar({
           </button>
         </div>
       </div>
+      {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
+      {pendingWorkspace && (
+        <div role="dialog" aria-modal="true" aria-label="Move conversation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onKeyDown={event => { if (event.key === 'Escape' && !saving) setPendingWorkspace(null); }}>
+          <div className="w-full max-w-md rounded-lg border border-pc-border bg-[var(--pc-bg-surface)] p-5 shadow-xl">
+            <h2 className="text-sm font-semibold">Move to {workspaces.find(w => w.id === pendingWorkspace)?.label}?</h2>
+            <p className="mt-3 text-sm text-pc-text-secondary">Chat history stays visible. Kin starts a fresh model context in the new workspace.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button autoFocus type="button" disabled={saving} onClick={() => setPendingWorkspace(null)} className="rounded-md border border-pc-border px-3 py-2 text-sm">Cancel move</button>
+              <button type="button" disabled={saving} onClick={async () => { const result = await onUpdateScope({ workspaceId: pendingWorkspace }); if (result !== null) setPendingWorkspace(null); }} className="rounded-md bg-pc-accent px-3 py-2 text-sm text-white">Move conversation</button>
+            </div>
+          </div>
+        </div>
+      )}
       <WorkspaceManagerDialog
         open={workspaceManagerOpen}
         workspaces={workspaces}

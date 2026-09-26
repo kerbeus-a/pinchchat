@@ -127,6 +127,7 @@ describe('GmCommandCenter', () => {
       expect(send).toHaveBeenCalledWith('gm.command', {
         command: 'Build the command center controls',
         acceptanceCriteria: ['missions are visible'],
+        startTask: true,
         sourceSessionId: 'session-1',
       });
     });
@@ -281,7 +282,8 @@ describe('GmCommandCenter', () => {
         .mockResolvedValueOnce({ turns: [{ id: 'i1', role: 'gm', kind: 'instruction', content: 'policy', created_at: '2026-07-28T10:02:00Z' }] })
         .mockResolvedValueOnce({ contexts: [] })
         .mockResolvedValueOnce({ mission, tasks: [completedTask], events: [] })
-        .mockResolvedValueOnce({ turns: [{ id: 'r1', role: 'agent', kind: 'result', content: 'Use the Kin-native project room.', created_at: '2026-07-28T10:03:00Z' }] });
+        .mockResolvedValueOnce({ turns: [{ id: 'r1', role: 'agent', kind: 'result', content: 'Use the Kin-native project room.', created_at: '2026-07-28T10:03:00Z' }] })
+        .mockResolvedValueOnce({ contexts: [] });
 
       render(<GmCommandCenter send={send} />);
       expect(await screen.findAllByText('Durable backend state')).toHaveLength(2);
@@ -294,7 +296,7 @@ describe('GmCommandCenter', () => {
         await Promise.resolve();
       });
 
-      await waitFor(() => expect(send).toHaveBeenCalledTimes(6));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(7));
       expect(await screen.findByText('Use the Kin-native project room.')).toBeDefined();
       expect(send).toHaveBeenCalledWith('gm.mission.detail', { missionId: 'm1' });
       expect(send).toHaveBeenCalledWith('gm.task.turns', { taskId: 't1' });

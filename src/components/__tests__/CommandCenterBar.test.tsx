@@ -41,7 +41,6 @@ describe('CommandCenterBar', () => {
 
   it('requires confirmation before changing workspace', () => {
     const update = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(
       <CommandCenterBar
         workspaces={workspaces}
@@ -62,8 +61,13 @@ describe('CommandCenterBar', () => {
     );
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'home' } });
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(screen.getByRole('dialog', { name: 'Move conversation' })).toBeTruthy();
     expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel move' }));
+    expect(screen.queryByRole('dialog', { name: 'Move conversation' })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'home' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move conversation' }));
+    expect(update).toHaveBeenCalledWith({ workspaceId: 'home' });
   });
 
   it('requests authentication instead of changing to Action mode when locked', () => {

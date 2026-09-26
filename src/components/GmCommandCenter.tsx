@@ -223,14 +223,14 @@ export function GmCommandCenter({
       void (async () => {
         try {
           await loadMissionDetail(selectedMissionId);
-          if (pollingTaskId) await loadTurns(pollingTaskId);
+          if (pollingTaskId) await Promise.all([loadTurns(pollingTaskId), loadContexts(pollingTaskId)]);
         } catch {
           setError('Could not refresh active task');
         }
       })();
     }, 2_000);
     return () => window.clearInterval(timer);
-  }, [hasActiveTask, loadMissionDetail, loadTurns, pollingTaskId, selectedMissionId]);
+  }, [hasActiveTask, loadMissionDetail, loadTurns, loadContexts, pollingTaskId, selectedMissionId]);
 
   const criteriaList = useCallback((raw: string): string[] => {
     return raw.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -261,6 +261,7 @@ export function GmCommandCenter({
       const res = await send('gm.command', {
         command: trimmed,
         acceptanceCriteria: criteriaList(criteria),
+        startTask: true,
         ...(sourceSessionId ? { sourceSessionId } : {}),
       });
       const created = res.mission as { id?: string } | undefined;
@@ -364,10 +365,16 @@ export function GmCommandCenter({
     ?? selectedTask?.runner
     ?? null;
   const actualModel = stringValue(selectedRunFinished?.payload?.actualModel)
+    ?? selectedContext?.model
     ?? null;
   const runningTasks = detail?.tasks.filter((task) => task.status === 'running').length ?? 0;
   const queuedTasks = detail?.tasks.filter((task) => task.status === 'queued').length ?? 0;
-  const activeWorkers = workers.filter((worker) => worker.status === 'running').length;
+  const activeWorkers = runningTasks;
+  const taskModel = (task: GmTask) => {
+    const run = [...(detail?.events ?? [])].reverse().find(event => event.task_id === task.id
+      && event.type === 'task.run.finished' && event.payload?.phase === 'work');
+    return stringValue(run?.payload?.actualModel) ?? task.execution?.policy.model ?? null;
+  };
   const models = new Set((detail?.events ?? [])
     .filter((event) => event.type === 'task.run.finished')
     .map((event) => stringValue(event.payload?.actualModel))
@@ -628,7 +635,7 @@ export function GmCommandCenter({
                 <div className="grid grid-cols-2 border border-pc-border bg-[var(--pc-bg-surface)] xl:grid-cols-4">
                   <Metric label="Running tasks" value={runningTasks} tone={runningTasks > 0 ? 'active' : undefined} />
                   <Metric label="Queued tasks" value={queuedTasks} />
-                  <Metric label="Active workers" value={`${activeWorkers}/${workers.length}`} tone={activeWorkers > 0 ? 'active' : undefined} />
+                  <Metric label="Active workers" value={String(activeWorkers)} tone={activeWorkers > 0 ? 'active' : undefined} />
                   <Metric label="Models used" value={models.size} />
                 </div>
 
@@ -662,7 +669,7 @@ export function GmCommandCenter({
                             {task.execution?.projectId ?? 'One-off task'} / {task.execution?.role ?? 'worker'} / attempt {task.attempt}
                           </p>
                           <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
-                            {modelLabel(task.execution?.policy.model ?? null)}
+                            {modelLabel(taskModel(task))}
                           </p>
                           {(task.execution?.dependsOnTaskIds?.length ?? 0) > 0 && (
                             <p className="mt-0.5 truncate text-[11px] text-pc-text-faint">
