@@ -15,6 +15,7 @@ import { ToolCollapseProvider } from './contexts/ToolCollapseContext';
 import { SwarmView } from './components/SwarmView';
 import { GmCommandCenter } from './components/GmCommandCenter';
 import { CommandNavigation } from './components/CommandNavigation';
+import { SystemView } from './components/SystemView';
 import { CommandCenterBar } from './components/CommandCenterBar';
 import { ActionUnlockDialog } from './components/ActionUnlockDialog';
 import { EvidencePanel } from './components/EvidencePanel';
@@ -299,11 +300,11 @@ export default function App() {
       />
       <div className="flex min-w-0 flex-1" aria-hidden={sidebarOpen ? true : undefined}>
         <div ref={splitContainerRef} className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : t('app.mainChat')}>
+        <main className="flex min-w-0 flex-col" style={splitSession ? { width: `${splitRatio}%` } : { flex: 1 }} aria-label={commandView === 'system' ? 'System' : commandView === 'swarm' ? 'Swarm Runner' : commandView === 'investigations' ? 'GM Activity' : t('app.mainChat')}>
           {commandView === 'chat' && (
             <Header status={status} sessionKey={activeSession} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeSessionData={sessions.find(s => s.key === activeSession)} onLogout={logout} soundEnabled={soundEnabled} onToggleSound={toggleSound} messages={messages} agentAvatarUrl={agentIdentity?.avatar} agentName={resolveAgentDisplayName(activeSession)} onCompact={handleCompact} isAdmin={agentIdentity?.isAdmin === true} />
           )}
-          <CommandCenterBar
+          {commandView !== 'system' && <CommandCenterBar
             workspaces={commandCenter.workspaces}
             scope={commandCenter.scope}
             sources={commandCenter.sources}
@@ -318,8 +319,10 @@ export default function App() {
             onUpdateScope={commandCenter.updateScope}
             onCreateWorkspace={commandCenter.createWorkspace}
             onUpdateWorkspace={commandCenter.updateWorkspace}
-          />
-          {commandView === 'swarm' ? (
+          />}
+          {commandView === 'system' ? (
+            <SystemView send={send} accessAvailable={agentIdentity?.isAdmin === true} />
+          ) : commandView === 'swarm' ? (
             <SwarmView />
           ) : commandView === 'investigations' ? (
             <GmCommandCenter

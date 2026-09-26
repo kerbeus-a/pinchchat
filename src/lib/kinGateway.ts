@@ -403,6 +403,13 @@ export class KinGatewayClient {
         return await res.json() as JsonPayload;
       }
 
+      case 'system.status': {
+        const res = await fetch(`${url}/api/system/status?agent=${agent}`, { headers: this.authHeaders() });
+        if (res.status === 401 || res.status === 403) throw new AuthError(`system.status: ${res.status}`);
+        if (!res.ok) throw new Error(`system.status: HTTP ${res.status}`);
+        return await res.json() as JsonPayload;
+      }
+
       case 'sessions.delete': {
         const key = params.key as string;
         await fetch(`${url}/api/sessions/${encodeURIComponent(key)}?agent=${agent}`, { method: 'DELETE', headers: this.authHeaders() });
