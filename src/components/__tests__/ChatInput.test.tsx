@@ -2,13 +2,26 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '../ChatInput';
 
 void React;
+afterEach(cleanup);
 
 describe('ChatInput attachments', () => {
+  it('hides unsafe attachment intake and refuses pasted files while text chat remains usable', async () => {
+    const onSend = vi.fn();
+    const { container } = render(<ChatInput onSend={onSend} onAbort={vi.fn()} isGenerating={false} disabled={false} attachmentsEnabled={false} />);
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    const textarea = screen.getByLabelText('Message', { selector: 'textarea' });
+    fireEvent.paste(textarea, { clipboardData: { items: [{ kind: 'file', getAsFile: () => new File(['private'], 'private.pdf') }] } });
+    expect((await screen.findByRole('alert')).textContent).toContain('local-only intake');
+    expect(screen.queryByText('private.pdf')).toBeNull();
+    fireEvent.change(textarea, { target: { value: 'ordinary chat' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSend).toHaveBeenCalledWith('ordinary chat', undefined);
+  });
   it('sends PDF attachments instead of dropping non-image files', async () => {
     const onSend = vi.fn();
     const { container } = render(

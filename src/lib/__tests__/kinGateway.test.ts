@@ -24,6 +24,30 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+it('surfaces the privacy refusal without treating a rejected turn as accepted', async () => {
+  const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
+  await connectClient(client);
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ code: 'local_only_session', error: 'This session requires local-only processing.' }, 409));
+  const events: Array<Record<string, unknown>> = [];
+  client.onEvent((event, payload) => { if (event === 'chat') events.push(payload); });
+  await client.send('chat.send', { sessionKey: 's1', message: 'continue' });
+  await vi.waitFor(() => expect(events).toHaveLength(1));
+  expect(events[0]).toMatchObject({ state: 'error', errorMessage: 'This session requires local-only processing.', sessionKey: 's1' });
+  client.disconnect();
+});
+
+it('does not expose arbitrary server error bodies', async () => {
+  const client = new KinGatewayClient('http://localhost/kinchat/v1', 'tok');
+  await connectClient(client);
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ error: 'private stack trace' }, 500));
+  const events: Array<Record<string, unknown>> = [];
+  client.onEvent((event, payload) => { if (event === 'chat') events.push(payload); });
+  await client.send('chat.send', { sessionKey: 's1', message: 'continue' });
+  await vi.waitFor(() => expect(events).toHaveLength(1));
+  expect(events[0]).toMatchObject({ state: 'error', errorMessage: 'HTTP 500' });
+  client.disconnect();
+});
+
 function sseResponse(lines: unknown[]): Response {
   const body = new ReadableStream({
     start(controller) {

@@ -30,6 +30,7 @@ interface Props {
   onAbort: () => void;
   isGenerating: boolean;
   disabled: boolean;
+  attachmentsEnabled?: boolean;
   sessionKey?: string;
   replyTo?: ReplyContext | null;
   onCancelReply?: () => void;
@@ -113,7 +114,8 @@ function toQuotedContext(text: string): string {
     .join('\n');
 }
 
-export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disabled, sessionKey, replyTo, onCancelReply, insertRequest }: Props) {
+export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disabled, attachmentsEnabled = true, sessionKey, replyTo, onCancelReply, insertRequest }: Props) {
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const t = useT();
   const { sendOnEnter, toggle: toggleSendShortcut } = useSendShortcut();
   const [text, setText] = useState('');
@@ -189,6 +191,10 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
   }, [insertRequest]);
 
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
+    if (!attachmentsEnabled) {
+      setAttachmentError('File attachments are paused until local-only intake is enabled.');
+      return;
+    }
     const newFiles: FileAttachment[] = [];
     for (const file of Array.from(fileList)) {
       if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) continue;
@@ -213,7 +219,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
       });
     }
     setFiles(prev => [...prev, ...newFiles]);
-  }, []);
+  }, [attachmentsEnabled]);
 
   const removeFile = useCallback((id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
@@ -295,8 +301,8 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
   // Drag & drop handlers on the wrapper
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragOver(true);
-  }, []);
+    setIsDragOver(attachmentsEnabled);
+  }, [attachmentsEnabled]);
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
@@ -319,6 +325,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
       onDrop={handleDrop}
     >
       <div className="max-w-4xl mx-auto">
+        {attachmentError && <p role="alert" className="mb-2 text-sm text-pc-text-secondary">{attachmentError}</p>}
         <div className={`relative rounded-3xl border bg-[var(--pc-bg-surface)]/40 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] transition-colors ${isDragOver ? 'border-[var(--pc-accent-dim)] bg-[var(--pc-accent-glow)]' : 'border-pc-border'}`}>
           <SlashCommandMenu
             query={text}
@@ -403,7 +410,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
 
           <div className="flex items-end gap-3">
             {/* File picker button */}
-            <button
+            {attachmentsEnabled && <button
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled}
               className="shrink-0 h-11 w-11 rounded-2xl border border-pc-border bg-pc-elevated/30 flex items-center justify-center text-pc-text-secondary hover:text-pc-accent-light hover:bg-[var(--pc-hover)] transition-colors disabled:opacity-30"
@@ -411,7 +418,7 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
               aria-label={t('chat.attachFile')}
             >
               <Paperclip size={18} />
-            </button>
+            </button>}
             {/* Markdown preview toggle — hidden on mobile */}
             <button
               onClick={() => setShowPreview(v => { const next = !v; localStorage.setItem('pinchchat-md-preview', next ? '1' : '0'); return next; })}
@@ -421,14 +428,14 @@ export function ChatInput({ onSend, onNewSession, onAbort, isGenerating, disable
             >
               {showPreview ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
-            <input
+            {attachmentsEnabled && <input
               ref={fileInputRef}
               type="file"
               multiple
               className="hidden"
               onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
               accept={FILE_ACCEPT}
-            />
+            />}
 
             <textarea
               id="chat-input"

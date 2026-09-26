@@ -643,7 +643,13 @@ export class KinGatewayClient {
       });
 
       if (!res.ok || !res.body) {
-        this.emit('chat', { state: 'error', errorMessage: `HTTP ${res.status}`, runId, sessionKey });
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+          const error = await res.json() as JsonPayload;
+          if (res.status === 409 && ['local_only_session', 'private_attachment_required'].includes(String(error.code))
+            && typeof error.error === 'string') errorMessage = error.error.slice(0, 500);
+        } catch { /* Keep the status when the server did not return a known safe error. */ }
+        this.emit('chat', { state: 'error', errorMessage, runId, sessionKey });
         return;
       }
 

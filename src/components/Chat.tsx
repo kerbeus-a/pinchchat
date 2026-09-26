@@ -433,7 +433,7 @@ export function Chat({ messages, isGenerating, isLoadingHistory, status, session
           </div>
         )}
       </div>
-      <ChatInput onSend={handleSend} onNewSession={onNewSession} onAbort={onAbort} isGenerating={isGenerating} disabled={status !== 'connected'} sessionKey={sessionKey} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} insertRequest={insertRequest} />
+      <ChatInput onSend={handleSend} onNewSession={onNewSession} onAbort={onAbort} isGenerating={isGenerating} disabled={status !== 'connected'} attachmentsEnabled={false} sessionKey={sessionKey} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} insertRequest={insertRequest} />
     </div>
   );
 }
