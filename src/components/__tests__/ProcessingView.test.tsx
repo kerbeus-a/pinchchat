@@ -12,6 +12,51 @@ const listing = (state: string = 'queued') => ({ documents: [{ documentId: 'd1',
 afterEach(() => cleanup());
 
 describe('Processing view', () => {
+  it('searches structured fields on the server and discloses source coverage',async()=>{
+    const send=vi.fn(async(method:string)=>method==='processing.catalogue'?{...listing('parsed'),documents:[],coverage:{received:3,extracted:2,reviewed:1,partial:false}}:listing());
+    render(<ProcessingView send={send} workspaces={workspaces} accessAvailable/>);
+    await screen.findByText('Queued');
+    fireEvent.change(screen.getByRole('searchbox',{name:'Search document fields'}),{target:{value:'INV-001'}});
+    fireEvent.click(screen.getByRole('button',{name:'Search documents'}));
+    await screen.findByText('No documents match this search.');
+    expect(send).toHaveBeenCalledWith('processing.catalogue',{workspaceId:'home',before:null,query:'INV-001'});
+    expect(screen.getByText(/No mail or accounting sources included/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Clear search'}));
+    await screen.findByText('Queued');
+  });
+  it('keeps only unfinished batch files after a partial failure and reuses their request IDs',async()=>{
+    let failed=false;
+    const send=vi.fn(async(method:string,params:Record<string,unknown>)=>{
+      if(method==='processing.upload') {
+        if((params.file as File).name==='second.pdf'&&!failed){failed=true;throw new Error('Temporary upload failure');}
+        return {receipt:{id:(params.file as File).name}};
+      }
+      if(method==='processing.enqueue') return {};
+      return listing();
+    });
+    render(<ProcessingView send={send} workspaces={workspaces} accessAvailable/>);
+    await screen.findByText('Queued');
+    fireEvent.change(screen.getByLabelText('Choose documents',{selector:'input'}),{target:{files:[new File(['a'],'first.pdf'),new File(['b'],'second.pdf')]}});
+    fireEvent.click(screen.getByRole('button',{name:'Process as record'}));
+    await screen.findByText('Temporary upload failure');
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Process as record'}).hasAttribute('disabled')).toBe(false));
+    expect(screen.queryByText('first.pdf')).toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:'Process as record'}));
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'Process as record'})).toBeNull());
+    const calls=send.mock.calls.filter(([method])=>method==='processing.upload');
+    expect(calls).toHaveLength(3);expect(calls[1][1].requestId).toBe(calls[2][1].requestId);
+  });
+  it('uses the server decision filter and shows accepted records honestly', async () => {
+    const send=vi.fn(async(_method:string,params:Record<string,unknown>)=>params.view==='needs_decision'
+      ? {...listing('parsed'),documents:[]}
+      : {...listing('parsed'),documents:listing('parsed').documents.map(d=>({...d,extraction:{id:'e1',state:'ready',reviewStatus:'accepted'}}))});
+    render(<ProcessingView send={send} workspaces={workspaces} accessAvailable />);
+    await screen.findByText('Owner accepted');
+    fireEvent.change(screen.getByRole('combobox',{name:'Document status'}),{target:{value:'needs_decision'}});
+    await screen.findByText('No records match this status.');
+    expect(send).toHaveBeenCalledWith('processing.list',{workspaceId:'home',before:null,view:'needs_decision'});
+    expect(screen.queryByText('synthetic.pdf')).toBeNull();
+  });
   it('does not request private data without owner access', async () => {
     const send = vi.fn(); render(<ProcessingView send={send} workspaces={workspaces} accessAvailable={false} />);
     expect(screen.getByText('Document processing is available to the owner.')).toBeTruthy(); expect(send).not.toHaveBeenCalled();
@@ -33,7 +78,7 @@ describe('Processing view', () => {
     render(<ProcessingView send={send} workspaces={workspaces} accessAvailable />);
     await screen.findByText('Queued');
     const file = new File(['%PDF-synthetic'], 'new.pdf', { type: 'application/pdf' });
-    fireEvent.change(screen.getByLabelText('Choose PDF', { selector: 'input' }), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('Choose documents', { selector: 'input' }), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: 'Process as record' }));
     await screen.findByText('Connection interrupted.');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Process as record' }).hasAttribute('disabled')).toBe(false));
@@ -47,7 +92,7 @@ describe('Processing view', () => {
     const data = listing(); data.capabilities.processingEnabled = false;
     render(<ProcessingView send={vi.fn().mockResolvedValue(data)} workspaces={workspaces} accessAvailable />);
     await screen.findByText('Document processing is not enabled.');
-    expect(screen.getByRole('button', { name: 'Choose PDF' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Choose documents' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'Cancel synthetic.pdf' }).hasAttribute('disabled')).toBe(false);
   });
   it('renders document text literally without active images, links or HTML', async () => {

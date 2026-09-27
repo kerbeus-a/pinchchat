@@ -11,7 +11,7 @@ interface Status {
   checkedAt: string; staleAfterMs: number; services: Service[];
   storage: Array<{ id: string; path: string; mounted: boolean; freeBytes: number | null; totalBytes: number | null; state: string; detail: string }>;
   localInference: { inFlight: number; waiting: number };
-  documentProcessing: { readiness: string; queueDepth: number | null; lastSuccessAt: string | null };
+  documentProcessing: { readiness: string; intakeEnabled?: boolean; extractionEnabled?: boolean; queueDepth: number | null; lastSuccessAt: string | null };
   backup: { sameDiskSnapshotAt: string | null; independentCopy: string; restoreVerified: string; detail: string };
 }
 const LABELS = { ready: 'Ready', not_integrated: 'Not connected to Kin', unavailable: 'Unavailable', unknown: 'Unknown' };
@@ -87,7 +87,9 @@ export function SystemView({ send, accessAvailable }: {
       <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-xs">
         <dt>Local inference running</dt><dd>{status.localInference.inFlight}</dd>
         <dt>Local inference waiting</dt><dd>{status.localInference.waiting}</dd>
-        <dt>Document intake</dt><dd>Not enabled</dd>
+        <dt>Document intake</dt><dd>{status.documentProcessing.intakeEnabled ? 'Enabled' : 'Not enabled'}</dd>
+        <dt>Private processing</dt><dd>{status.documentProcessing.readiness.replaceAll('_',' ')}</dd>
+        <dt>Local extraction</dt><dd>{status.documentProcessing.extractionEnabled ? 'Enabled' : 'Not enabled'}</dd>
         <dt>Document queue</dt><dd>{status.documentProcessing.queueDepth ?? 'Not available'}</dd>
         <dt>Last processed document</dt><dd>{timestamp(status.documentProcessing.lastSuccessAt)}</dd>
       </dl>

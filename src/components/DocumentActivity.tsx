@@ -5,7 +5,7 @@ import type { JsonPayload } from '../lib/kinGateway';
 interface Activity {
   task: { id: string; state: string; attempt: number; pipeline: string };
   executor: string; worker: string; model: string | null;
-  context: { documentId: string; receiptId: string; bytes: number };
+  context: { documentId: string; receiptId: string; bytes: number; mime?:string };
   events: Array<{ id: number; state: string; attempt: number; kind: string; error_code: string | null; created_at: string }>;
   truncated: boolean;
 }
@@ -35,10 +35,10 @@ export function DocumentActivity({ send, workspace, jobId, name, onClose }: {
   }, [send, workspace, jobId]);
   const rows = data ? [
     ['Task', data.task.id], ['Stage', data.task.state], ['Attempt', `${data.task.attempt}/3`],
-    ['Executor', data.executor], ['Worker', data.worker], ['Model', data.model ?? 'Not applicable (PDF parser)'],
-    ['Privacy', 'Local only'], ['Input', `Verified original PDF, ${data.context.bytes.toLocaleString()} bytes`],
+    ['Executor', data.executor], ['Worker', data.worker], ['Model', data.model ?? `Not applicable (${data.context.mime?.startsWith('image/')?'image':'PDF'} parser)`],
+    ['Privacy', 'Local only'], ['Input', `Verified original ${data.context.mime==='image/png'?'PNG':data.context.mime==='image/jpeg'?'JPEG':'PDF'}, ${data.context.bytes.toLocaleString()} bytes`],
     ['Document', data.context.documentId], ['Receipt', data.context.receiptId],
-    ['LLM context', 'Not applicable (PDF bytes, no LLM prompt)'], ['Profile', data.task.pipeline],
+    ['LLM context', 'Not applicable (document bytes, no LLM prompt)'], ['Profile', data.task.pipeline],
   ] : [];
   return <aside aria-label="Private task inspector" className="min-w-0 border-t border-pc-border pt-3 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
     <div className="mb-3 flex items-start gap-3">

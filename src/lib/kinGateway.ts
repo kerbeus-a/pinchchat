@@ -411,22 +411,35 @@ export class KinGatewayClient {
       }
 
       case 'processing.list':
+      case 'processing.catalogue':
       case 'processing.enqueue':
       case 'processing.control':
       case 'processing.preview':
+      case 'processing.extract':
+      case 'processing.original':
       case 'processing.activity':
       case 'processing.upload': {
         const workspace = encodeURIComponent(String(params.workspaceId ?? ''));
         let path = `/api/processing/${workspace}`;
         let options: RequestInit = { headers: this.authHeaders(), signal: AbortSignal.timeout(30_000) };
-        if (method === 'processing.list') {
-          if (params.before != null) path += `?before=${encodeURIComponent(String(params.before))}`;
+        if (method === 'processing.list' || method === 'processing.catalogue') {
+          const query = new URLSearchParams();
+          if(method==='processing.catalogue'){path+='/catalogue';query.set('q',String(params.query??''));}
+          if (params.before != null) query.set('before',String(params.before));
+          if (params.view != null) query.set('view',String(params.view));
+          if (query.size) path += `?${query}`;
         } else if (method === 'processing.upload') {
-          if (!(params.file instanceof File) || params.file.size < 1 || params.file.size > 50 * 1024 ** 2) throw new Error('Choose a PDF of up to 50 MiB.');
+          if (!(params.file instanceof File) || params.file.size < 1 || params.file.size > 50 * 1024 ** 2) throw new Error('Choose a PDF, PNG or JPEG of up to 50 MiB.');
+          const extension=params.file.name.toLowerCase().split('.').at(-1);
+          const mime=extension==='pdf'?'application/pdf':extension==='png'?'image/png':['jpg','jpeg'].includes(extension??'')?'image/jpeg':null;
+          if(!mime) throw new Error('Unsupported document format.');
           path = `/api/intake/${workspace}?action=process_as_record&request_id=${encodeURIComponent(String(params.requestId))}&name=${encodeURIComponent(params.file.name)}`;
-          options = { method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/pdf' }), body: params.file, signal: AbortSignal.timeout(125_000) };
-        } else if (method === 'processing.preview' || method === 'processing.activity') {
-          path += `/${encodeURIComponent(String(params.jobId))}/${method === 'processing.preview' ? 'preview' : 'activity'}`;
+          options = { method: 'POST', headers: this.authHeaders({ 'Content-Type': mime }), body: params.file, signal: AbortSignal.timeout(125_000) };
+        } else if (['processing.preview','processing.activity','processing.original'].includes(method)) {
+          path += `/${encodeURIComponent(String(params.jobId))}/${method.split('.')[1]}`;
+        } else if (method === 'processing.extract') {
+          path += `/${encodeURIComponent(String(params.jobId))}/extract`;
+          options = { ...options, method: 'POST', headers: this.authHeaders({ 'Content-Type':'application/json' }), body:JSON.stringify({reasoning:params.reasoning ?? 'medium'}) };
         } else {
           path += method === 'processing.enqueue' ? '/enqueue' : `/${encodeURIComponent(String(params.jobId))}/control`;
           options = { ...options, method: 'POST', headers: this.authHeaders({ 'Content-Type': 'application/json' }),
@@ -434,8 +447,32 @@ export class KinGatewayClient {
         }
         const res = await fetch(`${url}${path}`, options);
         if (res.status === 401 || res.status === 403) throw new AuthError('Owner access is no longer available.');
+        if (method === 'processing.original' && res.ok) {
+          if (!['application/pdf','image/png','image/jpeg'].includes(res.headers.get('content-type')??'')) throw new Error('Original response format is not supported.');
+          const blob = await res.blob();
+          if (blob.size > 50 * 1024 ** 2) throw new Error('Original exceeds the file limit.');
+          return { objectUrl: URL.createObjectURL(blob) };
+        }
         const result = await res.json() as JsonPayload;
         if (!res.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Document request failed.');
+        return result;
+      }
+
+      case 'extraction.read':
+      case 'extraction.version':
+      case 'extraction.reprocess':
+      case 'extraction.defer':
+      case 'extraction.relations':
+      case 'extraction.relation':
+      case 'extraction.control':
+      case 'extraction.review': {
+        const suffix = method === 'extraction.read' ? '' : method === 'extraction.version' ? `/version/${encodeURIComponent(String(params.revision))}` : `/${method.split('.')[1]}`;
+        const path = `/api/processing/${encodeURIComponent(String(params.workspaceId))}/extraction/${encodeURIComponent(String(params.jobId))}${suffix}`;
+        const res = await fetch(`${url}${path}`, { headers:this.authHeaders({'Content-Type':'application/json'}), signal:AbortSignal.timeout(30000),
+          ...(!['extraction.read','extraction.version','extraction.relations'].includes(method) ? {method:'POST',body:JSON.stringify(method === 'extraction.control' ? {revision:params.revision,action:params.action} : method === 'extraction.reprocess' ? {revision:params.revision,requestId:params.requestId,reasoning:params.reasoning} : params.review)} : {}) });
+        if (res.status === 401 || res.status === 403) throw new AuthError('Owner access is no longer available.');
+        const result = await res.json() as JsonPayload;
+        if (!res.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Extraction request failed.');
         return result;
       }
 
